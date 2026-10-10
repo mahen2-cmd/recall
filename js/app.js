@@ -228,6 +228,13 @@ function openDeckDialog(deck) {
   const newPerDay = h('input', { type: 'number', required: true, min: 0, max: 9999, step: 1, value: defaults.newPerDay });
   const retention = h('input', { type: 'number', required: true, min: 70, max: 97, step: 1, value: Math.round(defaults.retention * 100) });
   const easyInterval = h('input', { type: 'number', required: true, min: 0, max: 365, step: 1, value: defaults.easyInterval });
+  const scheduler = h(
+    'select',
+    null,
+    [['sm2', 'Anki default'], ['fsrs', 'FSRS']].map(([value, label]) =>
+      h('option', { value, selected: value === defaults.scheduler }, label),
+    ),
+  );
   const speakSide = h(
     'select',
     null,
@@ -251,6 +258,7 @@ function openDeckDialog(deck) {
         e.preventDefault();
         const values = {
           name: name.value.trim(),
+          scheduler: scheduler.value,
           newPerDay: Number(newPerDay.value),
           retention: Number(retention.value) / 100,
           easyInterval: Number(easyInterval.value),
@@ -268,19 +276,19 @@ function openDeckDialog(deck) {
       'div',
       { class: 'field-row' },
       h('label', { class: 'field' }, h('span', null, 'New cards per day'), newPerDay),
-      h('label', { class: 'field' }, h('span', null, 'Desired retention (%)'), retention),
+      h('label', { class: 'field' }, h('span', null, 'Easy interval (days)'), easyInterval),
     ),
     h(
-      'label',
-      { class: 'field' },
-      h('span', null, 'Easy interval for new cards (days)'),
-      easyInterval,
-      h('small', null, 'Pressing Easy on a card you are learning for the first time schedules it this far out. Set 0 to let FSRS choose, as Anki does when FSRS is on.'),
+      'div',
+      { class: 'field-row' },
+      h('label', { class: 'field' }, h('span', null, 'Scheduling'), scheduler),
+      h('label', { class: 'field' }, h('span', null, 'FSRS retention (%)'), retention),
     ),
+    h('small', { class: 'field-note' }, 'Anki default grows each interval by the card\u2019s ease, as Anki does out of the box. FSRS matches Anki with FSRS switched on. You can switch at any time.'),
     canSpeak() && [
       h(
         'div',
-        { class: 'field-row' },
+        { class: 'field-row', style: 'margin-top: 16px' },
         h('label', { class: 'field' }, h('span', null, 'Auto-play audio'), speakSide),
         h('label', { class: 'field' }, h('span', null, 'Speaking speed'), speechRate),
       ),

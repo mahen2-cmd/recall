@@ -9,7 +9,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 ## Features
 
 - **Decks and cards.** Create as many decks as you like; add, edit, move, search and delete cards.
-- **Anki's scheduler with FSRS.** Learning steps, relearning, interval fuzz and the 4am day rollover are ported from Anki's source, on top of the FSRS-6 memory model.
+- **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
 - **Read aloud.** A speaker button on each side of a card, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
 - **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day.
@@ -45,7 +45,12 @@ A new card starts with Anki's default learning steps:
 | **Good** | <10m | Moves to the next step, then graduates to review |
 | **Easy** | 4d | Graduates straight away |
 
-Once a card graduates, FSRS decides every interval from how well you have remembered it. Forgetting a review card sends it through one 10-minute relearning step.
+After that, the schedule depends on the deck's scheduling setting:
+
+- **Anki default** (SM-2). Each interval is the previous one multiplied by the card's ease, which starts at 250%. Pressing Good every time gives 1, 3, 8, 20, 50, 125 days and so on. Easy adds a 30% bonus and raises the ease; Hard grows the interval by 20% and lowers the ease.
+- **FSRS.** Intervals come from a model of how well you remember each card, aiming for the deck's desired retention. This is what Anki does when FSRS is switched on.
+
+In both, forgetting a review card sends it through one 10-minute relearning step. A deck can switch between the two at any time, because both sets of scheduling data are kept for every card.
 
 ### Keyboard shortcuts
 
@@ -62,8 +67,9 @@ Once a card graduates, FSRS decides every interval from how well you have rememb
 Each deck has its own:
 
 - **New cards per day** (default 20).
-- **Desired retention** (default 90%). Higher means fewer forgotten cards and more reviews.
-- **Easy interval for new cards** (default 4 days). Set it to 0 to let FSRS choose, which is what Anki does when FSRS is switched on.
+- **Easy interval** (default 4 days): how far out Easy sends a card you are learning for the first time. With FSRS, 0 lets FSRS choose, which is what Anki does.
+- **Scheduling**: Anki default or FSRS.
+- **FSRS retention** (default 90%). Higher means fewer forgotten cards and more reviews.
 - **Auto-play audio**: off, front, back or both sides.
 - **Speaking speed**, from normal down to very slow.
 
@@ -120,7 +126,7 @@ The server listens only on your own machine and rejects requests from other webs
 ```
 index.html          the page
 css/styles.css      all styling, light and dark
-js/fsrs.js          the scheduler: FSRS-6 and Anki's learning steps, with no browser code
+js/fsrs.js          the scheduler: Anki's SM-2 and FSRS-6 modes, with no browser code
 js/store.js         decks, cards, the study queue and saving
 js/app.js           the interface
 server.js           serves the app and reads and writes data/recall.json
@@ -139,7 +145,8 @@ npm test
 ## Differences from Anki
 
 - Fuzz uses Anki's interval ranges but a different random generator, so the exact day chosen within a range will not match Anki card for card.
-- Learning steps are fixed at 1 and 10 minutes, and the relearning step at 10 minutes.
+- Learning steps are fixed at 1 and 10 minutes, and the relearning step at 10 minutes. The other Anki default options (starting ease, easy bonus, hard interval and so on) are fixed at Anki's defaults too.
+- Easy on a new card gives exactly the easy interval; Anki varies it by a day either way.
 - FSRS uses its default parameters; they are not optimised from your review history.
 - There is no load balancer, no card templates, and no import of Anki `.apkg` files.
 - Cards are plain text.

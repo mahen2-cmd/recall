@@ -4,11 +4,15 @@ import { State, dayStart, newSchedule, nextDayAt, preview, schedule } from './fs
 
 const KEY = 'recall.v1';
 
-// `easyInterval` is the fixed interval (days) for Easy on a card still being learned for
-// the first time, like Anki's "Easy interval". 0 lets FSRS pick it instead.
-// `speak` is which side is read aloud automatically: 'none', 'front', 'back' or 'both'.
-// `speechRate` is the playback speed of that audio, where 1 is the voice's natural pace.
+// Per-deck settings.
+//   scheduler     'sm2' (Anki's default algorithm) or 'fsrs' (Anki with FSRS switched on)
+//   retention     desired retention, used by FSRS
+//   easyInterval  days until the next review when Easy is pressed on a card still being
+//                 learned for the first time, like Anki's "Easy interval"
+//   speak         side read aloud automatically: 'none', 'front', 'back' or 'both'
+//   speechRate    playback speed of that audio, where 1 is the voice's natural pace
 export const DECK_DEFAULTS = {
+  scheduler: 'sm2',
   newPerDay: 20,
   retention: 0.9,
   easyInterval: 4,
@@ -261,8 +265,8 @@ function fuzzFactor(c) {
 }
 
 function schedulingOptions(c) {
-  const { retention, easyInterval } = deck(c.deckId);
-  return { retention, easyInterval, fuzz: fuzzFactor(c) };
+  const { scheduler, retention, easyInterval } = deck(c.deckId);
+  return { scheduler, retention, easyInterval, fuzz: fuzzFactor(c) };
 }
 
 export function previewCard(id, now = Date.now()) {

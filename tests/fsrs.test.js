@@ -167,3 +167,77 @@ test('schedule does not mutate the card', () => {
   schedule(card, Rating.Good, T0);
   assert.deepEqual(card, copy);
 });
+
+// ---- Anki's default (SM-2) mode ---------------------------------------------
+
+const SM2 = { scheduler: 'sm2', easyInterval: 4 };
+
+/** Intervals in days once the card is in review, answering on each due date. */
+function reviewDays(ratings, options = SM2) {
+  let card = newSchedule(T0);
+  let now = T0;
+  const days = [];
+  for (const r of ratings) {
+    card = schedule(card, r, now, options);
+    if (card.state === State.Review) days.push(card.scheduledDays);
+    now = card.due;
+  }
+  return { days, card };
+}
+
+test('sm2: learning steps and graduating intervals match Anki defaults', () => {
+  const p = preview(newSchedule(T0), T0, SM2);
+  assert.deepEqual([1, 2, 3].map((g) => (p[g].due - T0) / 1000), [60, 330, 600]);
+  assert.equal(p[4].scheduledDays, 4);
+  const graduated = schedule(p[3], Rating.Good, p[3].due, SM2);
+  assert.equal(graduated.state, State.Review);
+  assert.equal(graduated.scheduledDays, 1);
+  assert.equal(graduated.ease, 2.5);
+});
+
+test('sm2: Good multiplies the interval by the ease', () => {
+  assert.deepEqual(reviewDays(Array(8).fill(Rating.Good)).days, [1, 3, 8, 20, 50, 125, 313]);
+});
+
+test('sm2: Easy adds the easy bonus and raises the ease', () => {
+  const { days, card } = reviewDays(Array(5).fill(Rating.Easy));
+  assert.deepEqual(days, [4, 13, 45, 164, 629]);
+  close(card.ease, 3.1);
+});
+
+test('sm2: Hard grows slowly and lowers the ease, never below 130%', () => {
+  const { days, card } = reviewDays([3, 3, ...Array(12).fill(Rating.Hard)]);
+  assert.deepEqual(days.slice(0, 5), [1, 2, 3, 4, 5]);
+  close(card.ease, 1.3);
+});
+
+test('sm2: a lapse relearns for 10 minutes, then restarts at one day with lower ease', () => {
+  const { card } = reviewDays([3, 3, 3, 3, 3]);
+  assert.equal(card.scheduledDays, 20);
+  const lapsed = schedule(card, Rating.Again, card.due, SM2);
+  assert.equal(lapsed.state, State.Relearning);
+  assert.equal(lapsed.due, card.due + 10 * MINUTE);
+  close(lapsed.ease, 2.3);
+  assert.equal(lapsed.lapses, 1);
+
+  const p = preview(lapsed, lapsed.due, SM2);
+  assert.equal(p[1].due, lapsed.due + 10 * MINUTE);
+  assert.equal(p[2].due, lapsed.due + 15 * MINUTE);
+  assert.equal(p[3].scheduledDays, 1);
+  assert.equal(p[4].scheduledDays, 2);
+});
+
+test('sm2: a late review counts part of the delay', () => {
+  const { card } = reviewDays([3, 3, 3, 3]); // interval 8, ease 2.5
+  const late = preview(card, card.due + 4 * DAY, SM2);
+  assert.equal(late[3].scheduledDays, 25); // (8 + 4/2) * 2.5
+  assert.equal(late[4].scheduledDays, 39); // (8 + 4) * 2.5 * 1.3
+});
+
+test('a deck can switch between schedulers because both states are kept', () => {
+  const { card } = reviewDays([3, 3, 3, 3]);
+  assert.ok(card.stability > 0 && card.difficulty >= 1);
+  const fsrs = preview(card, card.due, { scheduler: 'fsrs' });
+  assert.ok(fsrs[3].scheduledDays > card.scheduledDays);
+  assert.equal(fsrs[3].ease, 2.5);
+});

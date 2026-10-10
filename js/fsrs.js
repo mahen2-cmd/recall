@@ -1,6 +1,9 @@
-// Anki's scheduler with FSRS enabled, ported from Anki's source:
-//   - memory model: fsrs-rs (FSRS-6), src/model_v6.rs
-//   - learning steps, review constraints and fuzz: anki/rslib/src/scheduler/states
+// Anki's scheduler, ported from Anki's source (anki/rslib/src/scheduler/states).
+// It has two modes, like Anki:
+//   - 'sm2'  Anki's default: each interval is the last one times the card's ease
+//   - 'fsrs' Anki with FSRS switched on: intervals come from the FSRS-6 memory model
+//            (fsrs-rs, src/model_v6.rs)
+// Learning steps, relearning and fuzz are the same in both.
 // Pure functions only: no DOM, no storage. Times are epoch milliseconds.
 
 export const Rating = { Again: 1, Hard: 2, Good: 3, Easy: 4 };
@@ -22,6 +25,17 @@ export const LEARN_STEPS = [1, 10]; // minutes
 export const RELEARN_STEPS = [10]; // minutes
 export const MAX_INTERVAL = 36500;
 const ROLLOVER_HOUR = 4; // a new day starts at 4am
+
+// Anki's defaults for the SM-2 mode.
+const INITIAL_EASE = 2.5;
+const MINIMUM_EASE = 1.3;
+const EASE_AGAIN = -0.2;
+const EASE_HARD = -0.15;
+const EASE_EASY = 0.15;
+const HARD_MULTIPLIER = 1.2;
+const EASY_MULTIPLIER = 1.3;
+const GRADUATING_GOOD = 1; // days
+const GRADUATING_EASY = 4; // days
 
 const S_MIN = 0.0001;
 const S_MAX = 36500;
@@ -200,6 +214,7 @@ export function newSchedule(now = Date.now()) {
     difficulty: 0,
     due: now,
     scheduledDays: 0,
+    ease: INITIAL_EASE,
     left: 0,
     reps: 0,
     lapses: 0,
@@ -212,13 +227,19 @@ export function newSchedule(now = Date.now()) {
  * Returns `{ 1: schedule, 2: schedule, 3: schedule, 4: schedule }`.
  *
  * Options:
- *   retention     desired retention, 0..1
+ *   scheduler     'fsrs' (default) or 'sm2'
+ *   retention     desired retention, 0..1; FSRS only
  *   fuzz          number in [0, 1) used to spread review intervals; omit for none
  *   easyInterval  fixed interval in days for Easy on a card still being learned for
- *                 the first time; 0 lets FSRS decide, as Anki does with FSRS on
+ *                 the first time; 0 means Anki's own choice (4 days in SM-2, and
+ *                 whatever FSRS computes in FSRS mode)
+ *
+ * The FSRS memory state and the SM-2 ease are both kept up to date in either mode, so a
+ * deck can switch between them at any time.
  */
 export function preview(card, now = Date.now(), options = {}) {
   const {
+    scheduler = 'fsrs',
     retention = 0.9,
     w = DEFAULT_W,
     maxInterval = MAX_INTERVAL,
@@ -226,6 +247,8 @@ export function preview(card, now = Date.now(), options = {}) {
     easyInterval = 0,
   } = options;
   const maximum = Math.max(maxInterval, 1);
+  const sm2 = scheduler === 'sm2';
+  const ease = card.ease ?? INITIAL_EASE;
   const elapsed = card.lastReview == null ? 0 : daysElapsed(card.lastReview, now);
 
   const memory = {};
@@ -238,7 +261,13 @@ export function preview(card, now = Date.now(), options = {}) {
   const fuzzed = (days, minimum) => withReviewFuzz(fuzz, days, clamp(minimum, 1, maximum), maximum);
   const whole = (days) => Math.max(Math.round(days), 1);
 
-  const base = (g) => ({ ...memory[g], reps: card.reps + 1, lapses: card.lapses, lastReview: now });
+  const base = (g) => ({
+    ...memory[g],
+    ease,
+    reps: card.reps + 1,
+    lapses: card.lapses,
+    lastReview: now,
+  });
   const step = (g, state, secs, left) => ({
     ...base(g),
     state,
@@ -256,21 +285,32 @@ export function preview(card, now = Date.now(), options = {}) {
 
   if (card.state === State.Review) {
     const previous = card.scheduledDays ?? 0;
-    const passing = (g, floor) =>
-      fuzzed(interval[g], Math.max(minimumFuzzInterval(interval[g], previous, maximum), floor));
-    const hard = passing(2, 1);
-    const good = passing(3, hard + 1);
-    const easy = passing(4, good + 1);
+    let hard, good, easy;
+    if (sm2) {
+      const current = Math.max(previous, 1);
+      const late = Math.max(elapsed - previous, 0);
+      hard = fuzzed(current * HARD_MULTIPLIER, previous + 1);
+      good = fuzzed((current + late / 2) * ease, hard + 1);
+      easy = fuzzed((current + late) * ease * EASY_MULTIPLIER, good + 1);
+    } else {
+      const passing = (g, floor) =>
+        fuzzed(interval[g], Math.max(minimumFuzzInterval(interval[g], previous, maximum), floor));
+      hard = passing(2, 1);
+      good = passing(3, hard + 1);
+      easy = passing(4, good + 1);
+    }
     return {
       1: {
         ...step(1, State.Relearning, stepSecs(RELEARN_STEPS, 0), RELEARN_STEPS.length),
         lapses: card.lapses + 1,
-        // Interval the card would get straight after the lapse; fuzz comes on leaving relearning.
-        scheduledDays: whole(interval[1]),
+        ease: Math.max(ease + EASE_AGAIN, MINIMUM_EASE),
+        // The interval the card restarts from once it leaves relearning. SM-2 resets it
+        // to a day; FSRS computes it, and fuzz is applied on leaving relearning.
+        scheduledDays: sm2 ? 1 : whole(interval[1]),
       },
-      2: review(2, hard),
+      2: { ...review(2, hard), ease: Math.max(ease + EASE_HARD, MINIMUM_EASE) },
       3: review(3, good),
-      4: review(4, easy),
+      4: { ...review(4, easy), ease: ease + EASE_EASY },
     };
   }
 
@@ -281,9 +321,14 @@ export function preview(card, now = Date.now(), options = {}) {
   const left = card.state === State.New ? steps.length : (card.left ?? 0);
 
   const goodDelay = goodDelaySecs(steps, left);
-  const graduateGood = () => fuzzed(whole(interval[3]), 1);
+  const restart = Math.max(card.scheduledDays ?? 0, 1); // set when the card lapsed
+  const graduateGood = () => {
+    if (sm2) return Math.min(relearning ? restart : GRADUATING_GOOD, maximum);
+    return fuzzed(whole(interval[3]), 1);
+  };
   const graduateEasy = () => {
     if (!relearning && easyInterval > 0) return Math.min(Math.round(easyInterval), maximum);
+    if (sm2) return Math.min(relearning ? restart + 1 : GRADUATING_EASY, maximum);
     const good = fuzzed(interval[3], 1);
     return fuzzed(whole(interval[4]), good + 1);
   };
