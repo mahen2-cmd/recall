@@ -1,0 +1,11 @@
+{
+  "name": "recall",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A simple spaced-repetition flashcard app using the FSRS algorithm",
+  "scripts": {
+    "start": "python3 -m http.server 5173",
+    "test": "node --test"
+  }
+}
