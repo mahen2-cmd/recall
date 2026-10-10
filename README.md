@@ -10,6 +10,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 
 - **Decks and cards.** Create as many decks as you like; add, edit, move, search and delete cards.
 - **Import from Excel.** Turn a spreadsheet of words into cards in one step.
+- **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
 - **Read aloud.** A speaker button on each side of a card, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
@@ -19,7 +20,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 
 ## Quick start
 
-You need [Node.js](https://nodejs.org) 20 or newer.
+You need [Node.js](https://nodejs.org) 20 or newer. Importing from Anki needs 22.15 or newer.
 
 ```bash
 git clone https://github.com/mahen2-cmd/recall.git
@@ -86,6 +87,25 @@ Open a deck and press **Import**, then choose a file. Each row becomes one card.
 
 Only the first sheet of a workbook is read, and rows missing either a front or a back are left out. Imported cards are new cards, in the order they appear in the file.
 
+## Importing from Anki
+
+In Anki, choose **File → Export**, pick **Anki Deck Package (.apkg)** and leave **Include scheduling information** ticked. In Recall, press **Import from Anki** on the deck list and choose that file. A dialog lists the decks and cards found before anything is added.
+
+Each Anki deck becomes a Recall deck, and each card arrives exactly where it was in Anki's schedule:
+
+- **Review cards** keep their due day, interval and ease, so the cards due today in Anki are the cards due today in Recall, and the next interval is worked out from the same numbers.
+- **Learning and relearning cards** keep their step and the time they are next due.
+- **New cards** stay new, in Anki's order.
+- **Deck options** come across too: new cards per day, the easy interval, whether FSRS is on, and with FSRS the desired retention, the deck's parameters and each card's memory state.
+
+Some things do not come across:
+
+- Cards become plain text. Formatting, images and audio are dropped, and suspended cards are left out.
+- Recall has no setting for custom learning steps, starting ease, easy bonus and the like. If a deck changes these in Anki, the dialog says which, and Recall uses Anki's defaults for them.
+- The review history itself is not kept, only the schedule it led to.
+
+Importing the same file again adds only the cards that are not in Recall yet. It does not update cards already imported, so reviews done in Anki afterwards are not picked up.
+
 ## Voices
 
 The speaker reads text as European Portuguese. Several voice engines are supported, and the best one available is used automatically:
@@ -144,8 +164,9 @@ js/store.js         decks, cards, the study queue and saving
 js/importer.js      reads .xlsx and CSV files into rows
 js/app.js           the interface
 server.js           serves the app and reads and writes data/recall.json
+anki.js             reads an Anki collection into decks and cards
 tts.js              the voice engines and the audio cache
-tests/              unit tests for the scheduler and the store
+tests/              unit tests for the scheduler, the store and the importers
 ```
 
 The scheduler follows two sources: the memory model from [fsrs-rs](https://github.com/open-spaced-repetition/fsrs-rs), which Anki uses, and the learning, review and fuzz rules from [Anki's scheduler](https://github.com/ankitects/anki/tree/main/rslib/src/scheduler/states).
@@ -162,5 +183,5 @@ npm test
 - Learning steps are fixed at 1 and 10 minutes, and the relearning step at 10 minutes. The other Anki default options (starting ease, easy bonus, hard interval and so on) are fixed at Anki's defaults too.
 - Easy on a new card gives exactly the easy interval; Anki varies it by a day either way.
 - FSRS uses its default parameters; they are not optimised from your review history.
-- There is no load balancer, no card templates, and no import of Anki `.apkg` files.
+- There is no load balancer and no review limit per day, and cards have no templates.
 - Cards are plain text.

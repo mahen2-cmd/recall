@@ -1,5 +1,5 @@
 import { DAY, MINUTE, Rating, State } from './fsrs.js';
-import { parseSpreadsheet } from './importer.js';
+import { ankiCollection, parseSpreadsheet } from './importer.js';
 import * as store from './store.js';
 
 const app = document.getElementById('app');
@@ -516,6 +516,97 @@ function openImportDialog(deck, fileName, rows) {
   submit.focus();
 }
 
+// ---- Import decks from Anki ---------------------------------------------------
+
+function pickAnkiFile() {
+  if (!store.storageInfo().available) {
+    toast('Importing from Anki needs the Recall server. Start it with "npm start".');
+    return;
+  }
+  const input = h('input', {
+    type: 'file',
+    accept: '.apkg,.colpkg',
+    onchange: async () => {
+      const file = input.files[0];
+      if (!file) return;
+      try {
+        const res = await fetch('api/anki', { method: 'POST', body: await ankiCollection(await file.arrayBuffer()) });
+        if (!res.ok) throw new Error(await res.text());
+        openAnkiDialog(file.name, await res.json());
+      } catch (error) {
+        toast(error.message || 'Could not read that file.');
+      }
+    },
+  });
+  input.click();
+}
+
+function openAnkiDialog(fileName, { decks, suspended, blank, media }) {
+  const known = store.ankiCardIds();
+  const incoming = decks
+    .map((deck) => ({ ...deck, cards: deck.cards.filter((card) => !known.has(card.ankiId)) }))
+    .filter((deck) => deck.cards.length);
+  const total = incoming.reduce((sum, deck) => sum + deck.cards.length, 0);
+  const existing = decks.reduce((sum, deck) => sum + deck.cards.length, 0) - total;
+
+  const breakdown = (cards) => {
+    const count = (...states) => cards.filter((card) => states.includes(card.state)).length;
+    return [
+      [count(State.New), 'new'],
+      [count(State.Learning, State.Relearning), 'learning'],
+      [count(State.Review), 'in review'],
+    ]
+      .filter(([n]) => n)
+      .map(([n, label]) => `${n} ${label}`)
+      .join(', ');
+  };
+  const notes = [
+    existing && `${plural(existing, 'card')} already in Recall will be skipped.`,
+    suspended && `${plural(suspended, 'suspended card')} will be left out.`,
+    blank && `${plural(blank, 'card')} with no text on the front will be left out.`,
+    media && 'Images and audio are not imported. Cards are plain text.',
+    ...incoming
+      .filter((deck) => deck.custom.length)
+      .map((deck) => `“${deck.name}” has its own ${deck.custom.join(', ')} in Anki. Recall uses Anki’s defaults for these, so some intervals will differ.`),
+  ].filter(Boolean);
+
+  const form = h(
+    'form',
+    {
+      onsubmit: (e) => {
+        e.preventDefault();
+        const added = store.importAnkiDecks(incoming);
+        dialog.close();
+        toast(`Imported ${plural(added, 'card')} from Anki`);
+      },
+    },
+    h(
+      'p',
+      { class: 'message' },
+      total ? `${fileName}: every card keeps its due date, interval and ease from Anki.` : `${fileName}: nothing new to import.`,
+    ),
+    total > 0 &&
+      h(
+        'div',
+        { class: 'import-preview' },
+        h(
+          'table',
+          null,
+          h('thead', null, h('tr', null, h('th', null, 'Deck'), h('th', null, 'Cards'))),
+          h('tbody', null, incoming.map((deck) => h('tr', null, h('td', null, deck.name), h('td', null, breakdown(deck.cards))))),
+        ),
+      ),
+    notes.map((note) => h('p', { class: 'import-summary' }, note)),
+    h(
+      'div',
+      { class: 'modal-foot' },
+      h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Cancel'),
+      h('button', { class: 'btn primary', type: 'submit', disabled: !total }, total ? `Import ${plural(total, 'card')}` : 'Import'),
+    ),
+  );
+  const dialog = modal('Import from Anki', form, { onclose: render });
+}
+
 // ---- Backup ---------------------------------------------------------------
 
 function exportBackup() {
@@ -650,6 +741,7 @@ function renderHome() {
           'div',
           { class: 'row' },
           h('button', { class: 'btn primary', type: 'button', onclick: () => openDeckDialog() }, icon('plus'), 'New deck'),
+          h('button', { class: 'btn', type: 'button', onclick: pickAnkiFile }, icon('upload'), 'Import from Anki'),
           h('button', { class: 'btn', type: 'button', onclick: loadSampleDeck }, 'Try a sample deck'),
         ),
       );
@@ -664,7 +756,12 @@ function renderHome() {
         { class: 'page-head' },
         h('div', null, h('h1', null, 'Decks'), h('p', { class: 'sub' }, decks.length ? plural(decks.length, 'deck') : 'Nothing here yet')),
         decks.length > 0 &&
-          h('div', { class: 'actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => openDeckDialog() }, icon('plus'), 'New deck')),
+          h(
+            'div',
+            { class: 'actions' },
+            h('button', { class: 'btn', type: 'button', title: 'Import decks from an Anki .apkg file', onclick: pickAnkiFile }, icon('upload'), 'Import from Anki'),
+            h('button', { class: 'btn primary', type: 'button', onclick: () => openDeckDialog() }, icon('plus'), 'New deck'),
+          ),
       ),
       body,
     ),

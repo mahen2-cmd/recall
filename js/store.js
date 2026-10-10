@@ -11,6 +11,7 @@ const KEY = 'recall.v1';
 //                 learned for the first time, like Anki's "Easy interval"
 //   speak         side read aloud automatically: 'none', 'front', 'back' or 'both'
 //   speechRate    playback speed of that audio, where 1 is the voice's natural pace
+// A deck imported from Anki may also carry `fsrsParams`, its own FSRS parameters.
 export const DECK_DEFAULTS = {
   scheduler: 'sm2',
   newPerDay: 20,
@@ -218,6 +219,32 @@ export function addCards(deckId, pairs, now = Date.now()) {
   return pairs.length;
 }
 
+/**
+ * Add decks read from an Anki file by the server, with every card's schedule as it was.
+ * Importing the same file again adds only the cards that are not here yet.
+ * Returns how many cards were added.
+ */
+export function importAnkiDecks(imported, now = Date.now()) {
+  const known = ankiCardIds();
+  let added = 0;
+  for (const { ankiId, name, settings, cards } of imported) {
+    const fresh = cards.filter((c) => !known.has(c.ankiId));
+    if (!fresh.length) continue;
+    let d = state.decks.find((x) => x.ankiId === ankiId);
+    if (!d) {
+      d = { ...DECK_DEFAULTS, ...settings, id: uid(), name, ankiId, created: now };
+      state.decks.push(d);
+    }
+    for (const c of fresh) state.cards.push({ ...newSchedule(now), ...c, id: uid(), deckId: d.id });
+    added += fresh.length;
+  }
+  if (added) save();
+  return added;
+}
+
+/** Anki's ids of the cards already imported. */
+export const ankiCardIds = () => new Set(state.cards.map((c) => c.ankiId).filter(Boolean));
+
 export function updateCard(id, patch) {
   Object.assign(card(id), patch, { updated: Date.now() });
   save();
@@ -276,8 +303,8 @@ function fuzzFactor(c) {
 }
 
 function schedulingOptions(c) {
-  const { scheduler, retention, easyInterval } = deck(c.deckId);
-  return { scheduler, retention, easyInterval, fuzz: fuzzFactor(c) };
+  const { scheduler, retention, easyInterval, fsrsParams } = deck(c.deckId);
+  return { scheduler, retention, easyInterval, w: fsrsParams, fuzz: fuzzFactor(c) };
 }
 
 export function previewCard(id, now = Date.now()) {

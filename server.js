@@ -6,6 +6,7 @@ import { copyFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'n
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { readAnkiCollection } from './anki.js';
 import { createTts } from './tts.js';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
@@ -60,7 +61,7 @@ function readBody(req) {
       if (size > MAX_BODY) reject(new Error('too large'));
       else chunks.push(chunk);
     });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }
@@ -81,13 +82,19 @@ async function api(req, res) {
     return res.writeHead(200, { ...headers, 'Content-Type': 'application/json' }).end(body);
   }
   if (req.method === 'PUT') {
-    const body = await readBody(req);
+    const body = (await readBody(req)).toString('utf8');
     const data = JSON.parse(body);
     if (!Array.isArray(data?.decks) || !Array.isArray(data?.cards)) throw new Error('invalid state');
     await enqueue(() => saveState(body));
     return res.writeHead(204, headers).end();
   }
   res.writeHead(405, headers).end();
+}
+
+/** Turn an uploaded Anki collection into decks and cards. Nothing is saved here. */
+async function anki(req, res) {
+  const decks = await readAnkiCollection(await readBody(req));
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify(decks));
 }
 
 async function staticFile(path, res) {
@@ -120,6 +127,7 @@ createServer(async (req, res) => {
   try {
     if (path === '/api/state') await api(req, res);
     else if (path === '/api/tts' && req.method === 'GET') await speech(req, res);
+    else if (path === '/api/anki' && req.method === 'POST') await anki(req, res);
     else await staticFile(path, res);
   } catch (error) {
     if (res.headersSent) return res.end();

@@ -1,5 +1,6 @@
 // Reads spreadsheets into rows of text: Excel .xlsx files, and CSV or tab-separated text.
 // No libraries: an .xlsx file is a ZIP of XML files, which the browser can unpack itself.
+// An Anki .apkg file is a ZIP too; its database is picked out here for the server to read.
 
 // ---- ZIP --------------------------------------------------------------------
 
@@ -8,11 +9,12 @@ async function inflate(bytes) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/** Map of file name to a function returning that file's text. */
-function readZip(buffer) {
+const utf8 = new TextDecoder();
+
+/** Map of file name to a function returning that file's bytes. `kind` names the file in errors. */
+function readZip(buffer, kind = '.xlsx') {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
-  const utf8 = new TextDecoder();
 
   // The directory of files sits at the end of the archive.
   let end = -1;
@@ -22,7 +24,7 @@ function readZip(buffer) {
       break;
     }
   }
-  if (end < 0) throw new Error('This is not a valid .xlsx file.');
+  if (end < 0) throw new Error(`This is not a valid ${kind} file.`);
 
   const files = new Map();
   let at = view.getUint32(end + 16, true);
@@ -38,8 +40,8 @@ function readZip(buffer) {
     files.set(name, async () => {
       const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
       const data = bytes.subarray(start, start + size);
-      if (method !== 0 && method !== 8) throw new Error('Unsupported compression in .xlsx file.');
-      return utf8.decode(method === 8 ? await inflate(data) : data);
+      if (method !== 0 && method !== 8) throw new Error(`Unsupported compression in ${kind} file.`);
+      return method === 8 ? inflate(data) : data;
     });
     at += 46 + nameLength + extraLength + commentLength;
   }
@@ -75,10 +77,12 @@ function columnIndex(reference) {
   return index - 1;
 }
 
+const readText = async (files, name) => files.has(name) && utf8.decode(await files.get(name)());
+
 /** Path of the first worksheet, in the order the workbook lists its sheets. */
 async function firstSheetPath(files) {
-  const workbook = await files.get('xl/workbook.xml')?.();
-  const rels = await files.get('xl/_rels/workbook.xml.rels')?.();
+  const workbook = await readText(files, 'xl/workbook.xml');
+  const rels = await readText(files, 'xl/_rels/workbook.xml.rels');
   const id = workbook && attribute(/<sheet\b[^>]*>/.exec(workbook)?.[0] ?? '', 'r:id');
   if (id && rels) {
     for (const m of rels.matchAll(/<Relationship\b[^>]*>/g)) {
@@ -96,10 +100,10 @@ export async function parseXlsx(buffer) {
   const sheetPath = await firstSheetPath(files);
   if (!sheetPath) throw new Error('No worksheet found in this file.');
 
-  const sharedXml = (await files.get('xl/sharedStrings.xml')?.()) ?? '';
+  const sharedXml = (await readText(files, 'xl/sharedStrings.xml')) || '';
   const shared = [...sharedXml.matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)].map((m) => textOf(m[1] ?? ''));
 
-  const sheet = await files.get(sheetPath)();
+  const sheet = await readText(files, sheetPath);
   const rows = [];
   for (const rowMatch of sheet.matchAll(/<row\b[^>]*?(?:\/>|>([\s\S]*?)<\/row>)/g)) {
     const row = [];
@@ -170,7 +174,21 @@ export function parseDelimited(text) {
   return rows;
 }
 
-// ---- Entry point ------------------------------------------------------------
+// ---- Anki -------------------------------------------------------------------
+
+/**
+ * The collection database from an Anki .apkg or .colpkg file, as bytes. Only this part is
+ * sent to the server, so a package full of images and audio is no slower to import.
+ */
+export async function ankiCollection(buffer) {
+  const files = readZip(buffer, 'Anki');
+  // Newest layout first; packages made for older versions of Anki carry the other two.
+  const name = ['collection.anki21b', 'collection.anki21', 'collection.anki2'].find((n) => files.has(n));
+  if (!name) throw new Error('This file has no Anki collection in it.');
+  return files.get(name)();
+}
+
+// ---- Entry points -----------------------------------------------------------
 
 /** Rows of trimmed cell text from a spreadsheet file, without blank rows. */
 export async function parseSpreadsheet(buffer, fileName = '') {
