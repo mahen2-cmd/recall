@@ -10,6 +10,8 @@ const KEY = 'recall.v1';
 //   easyInterval  days until the next review when Easy is pressed on a card still being
 //                 learned for the first time, like Anki's "Easy interval"
 //   speak         side read aloud automatically: 'none', 'front', 'back' or 'both'
+//   frontLang     language the front is read in, such as 'en-US'
+//   backLang      language the back is read in
 //   speechRate    playback speed of that audio, where 1 is the voice's natural pace
 // A deck imported from Anki may also carry `fsrsParams`, its own FSRS parameters.
 export const DECK_DEFAULTS = {
@@ -18,6 +20,8 @@ export const DECK_DEFAULTS = {
   retention: 0.9,
   easyInterval: 4,
   speak: 'none',
+  frontLang: 'en-US',
+  backLang: 'pt-PT',
   speechRate: 0.8,
 };
 

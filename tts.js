@@ -6,6 +6,8 @@
 //   - Piper, a local offline voice, used when the others cannot be reached
 // The last two are installed by `npm run setup-voice`. Setting "engine" in data/tts.json
 // to "azure", "google", "edge" or "piper" moves that one to the front.
+// Each side of a card has its own language. The "voice" in data/tts.json is used for its
+// own language; other languages get a default voice. Piper only speaks Portuguese.
 // Every sentence is generated once and then served from data/audio/.
 
 import { spawn } from 'node:child_process';
@@ -14,6 +16,9 @@ import { access, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/prom
 import { join } from 'node:path';
 
 const DEFAULT_VOICE = 'pt-PT-RaquelNeural';
+// Voices for Azure and Edge in the other languages a card side can be read in.
+const VOICES = { 'en-US': 'en-US-JennyNeural', 'en-GB': 'en-GB-SoniaNeural' };
+const PIPER_LANG = 'pt-PT';
 const MAX_TEXT = 2000;
 const TIMEOUT = 30_000;
 const GOOGLE_CHUNK = 200; // most characters Google Translate reads in one request
@@ -89,19 +94,22 @@ export function createTts({ root, dataDir }) {
     return ffmpeg;
   }
 
-  /** The engines that can be used, best first, as `{ id, name, make(text, base) }`. */
-  async function engines() {
+  /** The engines that can speak `lang`, best first, as `{ id, name, make(text, base) }`. */
+  async function engines(lang) {
     const cfg = await config();
+    lang ??= cfg.lang;
+    // Azure and Edge need a voice made for the language.
+    const voice = lang === cfg.lang ? cfg.voice : VOICES[lang];
     const mp3 = (speak) => (text, base) => speak(text, `${base}.mp3`).then(() => `${base}.mp3`);
     const list = [];
-    if (cfg.azure) {
-      list.push({ id: 'azure', name: `azure:${cfg.voice}`, make: mp3((text, file) => azureSpeak(text, cfg, file)) });
+    if (cfg.azure && voice) {
+      list.push({ id: 'azure', name: `azure:${voice}`, make: mp3((text, file) => azureSpeak(text, { ...cfg, voice, lang }, file)) });
     }
-    list.push({ id: 'google', name: `google:${cfg.lang}`, make: mp3((text, file) => googleSpeak(text, cfg.lang, file)) });
-    if (await hasEdge()) {
-      list.push({ id: 'edge', name: `edge:${cfg.voice}`, make: mp3((text, file) => edgeSpeak(text, cfg.voice, file)) });
+    list.push({ id: 'google', name: `google:${lang}`, make: mp3((text, file) => googleSpeak(text, lang, file)) });
+    if (voice && (await hasEdge())) {
+      list.push({ id: 'edge', name: `edge:${voice}`, make: mp3((text, file) => edgeSpeak(text, voice, file)) });
     }
-    if (await hasPiper()) {
+    if (lang === PIPER_LANG && (await hasPiper())) {
       // One at a time: each run loads the voice model.
       const queued = (text, base) =>
         (piperQueue = piperQueue.then(() => piperSpeak(text, base), () => piperSpeak(text, base)));
@@ -183,11 +191,11 @@ export function createTts({ root, dataDir }) {
     return null;
   }
 
-  async function generate(text) {
+  async function generate(text, lang) {
     const hash = createHash('sha256').update(text).digest('hex').slice(0, 32);
     // Use the best engine that works, so a failure or being offline still gives some audio.
     let failure;
-    for (const { name, make } of await engines()) {
+    for (const { name, make } of await engines(lang)) {
       const base = join(audioDir, name.replace(/[^\w.-]/g, '_'), hash);
       const hit = await cached(base);
       if (hit) return hit;
@@ -202,14 +210,19 @@ export function createTts({ root, dataDir }) {
     throw failure;
   }
 
-  /** Audio for `text` as `{ body, type }`, generating and caching it if needed. */
-  async function speak(raw) {
+  /**
+   * Audio for `text` as `{ body, type }`, generating and caching it if needed.
+   * `lang` is a language such as 'en-US'; without it the configured voice's language is used.
+   */
+  async function speak(raw, lang) {
     const text = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT);
     if (!text) throw new Error('Nothing to say');
-    if (!inFlight.has(text)) {
-      inFlight.set(text, generate(text).finally(() => inFlight.delete(text)));
+    if (lang && !/^[a-z]{2,3}(-[A-Z]{2})?$/.test(lang)) throw new Error('Unknown language');
+    const key = `${lang ?? ''}\n${text}`;
+    if (!inFlight.has(key)) {
+      inFlight.set(key, generate(text, lang || undefined).finally(() => inFlight.delete(key)));
     }
-    const file = await inFlight.get(text);
+    const file = await inFlight.get(key);
     return { body: await readFile(file), type: TYPES[file.slice(-3)] };
   }
 

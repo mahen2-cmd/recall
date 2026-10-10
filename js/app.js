@@ -87,11 +87,15 @@ function countPills(c) {
 // ---- Speech ---------------------------------------------------------------
 // Uses the server's voice when there is one, otherwise the browser's own.
 
-const SPEECH_LANG = 'pt-PT';
+const LANGUAGES = [
+  ['pt-PT', 'Portuguese (Portugal)'],
+  ['en-US', 'English (US)'],
+  ['en-GB', 'English (UK)'],
+];
 let player = null;
 let speechToken = 0;
 
-const ttsUrl = (text) => `api/tts?text=${encodeURIComponent(text)}`;
+const ttsUrl = (text, lang) => `api/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}`;
 const serverVoice = () => store.storageInfo().voice;
 const canSpeak = () => Boolean(serverVoice()) || 'speechSynthesis' in window;
 
@@ -102,20 +106,20 @@ function stopSpeaking() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
-async function speak(text, rate = 1) {
+async function speak(text, lang, rate = 1) {
   stopSpeaking();
   if (!text.trim()) return;
   if (!serverVoice()) {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = SPEECH_LANG;
+    utterance.lang = lang;
     utterance.rate = rate;
-    utterance.voice = speechSynthesis.getVoices().find((v) => v.lang.replace('_', '-') === SPEECH_LANG) ?? null;
+    utterance.voice = speechSynthesis.getVoices().find((v) => v.lang.replace('_', '-') === lang) ?? null;
     speechSynthesis.speak(utterance);
     return;
   }
   const token = speechToken;
   try {
-    const res = await fetch(ttsUrl(text));
+    const res = await fetch(ttsUrl(text, lang));
     if (!res.ok) throw new Error(await res.text());
     const url = URL.createObjectURL(await res.blob());
     if (token !== speechToken) return; // moved on while the audio was loading
@@ -131,20 +135,24 @@ async function speak(text, rate = 1) {
 }
 
 /** Generate audio ahead of time so it plays instantly later. */
-function prepareSpeech(text) {
-  if (serverVoice() && text.trim()) fetch(ttsUrl(text)).catch(() => {});
+function prepareSpeech(text, lang) {
+  if (serverVoice() && text.trim()) fetch(ttsUrl(text, lang)).catch(() => {});
 }
+
+/** Read one side of a card aloud, in that side's language. */
+const speakSideOf = (card, deck, side) => speak(card[side], deck[`${side}Lang`], deck.speechRate);
 
 const speaksSide = (deck, side) => deck.speak === side || deck.speak === 'both';
 
 function prepareCardSpeech(card) {
   const deck = store.deck(card.deckId);
-  if (speaksSide(deck, 'front')) prepareSpeech(card.front);
-  if (speaksSide(deck, 'back')) prepareSpeech(card.back);
+  if (speaksSide(deck, 'front')) prepareSpeech(card.front, deck.frontLang);
+  if (speaksSide(deck, 'back')) prepareSpeech(card.back, deck.backLang);
 }
 
-const speakButton = (text, label, rate) =>
-  canSpeak() && h('button', { class: 'speak', type: 'button', title: `${label} (R)`, 'aria-label': label, onclick: () => speak(text, rate) }, icon('speaker'));
+const speakButton = (card, deck, side) =>
+  canSpeak() &&
+  h('button', { class: 'speak', type: 'button', title: `Listen to the ${side} (R)`, 'aria-label': `Listen to the ${side}`, onclick: () => speakSideOf(card, deck, side) }, icon('speaker'));
 
 // ---- Theme ----------------------------------------------------------------
 
@@ -243,6 +251,10 @@ function openDeckDialog(deck) {
       h('option', { value, selected: value === defaults.speak }, label),
     ),
   );
+  const languageSelect = (selected) =>
+    h('select', null, LANGUAGES.map(([value, label]) => h('option', { value, selected: value === selected }, label)));
+  const frontLang = languageSelect(defaults.frontLang);
+  const backLang = languageSelect(defaults.backLang);
 
   const speechRate = h(
     'select',
@@ -264,6 +276,8 @@ function openDeckDialog(deck) {
           retention: Number(retention.value) / 100,
           easyInterval: Number(easyInterval.value),
           speak: speakSide.value,
+          frontLang: frontLang.value,
+          backLang: backLang.value,
           speechRate: Number(speechRate.value),
         };
         if (!values.name) return name.focus();
@@ -293,7 +307,13 @@ function openDeckDialog(deck) {
         h('label', { class: 'field' }, h('span', null, 'Auto-play audio'), speakSide),
         h('label', { class: 'field' }, h('span', null, 'Speaking speed'), speechRate),
       ),
-      h('small', { class: 'field-note' }, 'Which side is spoken in Portuguese when it appears. You can always play either side with its speaker button.'),
+      h(
+        'div',
+        { class: 'field-row' },
+        h('label', { class: 'field' }, h('span', null, 'Front language'), frontLang),
+        h('label', { class: 'field' }, h('span', null, 'Back language'), backLang),
+      ),
+      h('small', { class: 'field-note' }, 'Auto-play reads a side aloud when it appears, in that side’s language. You can always play either side with its speaker button.'),
     ],
     h(
       'div',
@@ -944,9 +964,9 @@ function renderStudy(deck) {
   if (session.spoken !== shown) {
     session.spoken = shown;
     const side = session.revealed ? 'back' : 'front';
-    if (speaksSide(deck, side)) speak(card[side], deck.speechRate);
+    if (speaksSide(deck, side)) speakSideOf(card, deck, side);
     else stopSpeaking();
-    if (!session.revealed && speaksSide(deck, 'back')) prepareSpeech(card.back);
+    if (!session.revealed && speaksSide(deck, 'back')) prepareSpeech(card.back, deck.backLang);
   }
 
   app.replaceChildren(
@@ -965,8 +985,8 @@ function renderStudy(deck) {
           iconButton('trash', 'Delete card', () => removeCard(card), 'danger'),
         ),
         h('div', { class: 'face question' }, card.front),
-        speakButton(card.front, 'Listen to the front', deck.speechRate),
-        session.revealed && [h('hr'), h('div', { class: 'face answer' }, card.back), speakButton(card.back, 'Listen to the back', deck.speechRate)],
+        speakButton(card, deck, 'front'),
+        session.revealed && [h('hr'), h('div', { class: 'face answer' }, card.back), speakButton(card, deck, 'back')],
       ),
       h(
         'div',
@@ -1027,7 +1047,7 @@ document.addEventListener('keydown', (e) => {
     const card = store.card(session.cardId);
     const deck = store.deck(card.deckId);
     const side = deck.speak === 'front' || !session.revealed ? 'front' : 'back';
-    speak(card[side], deck.speechRate);
+    speakSideOf(card, deck, side);
   } else if (e.key.toLowerCase() === 'e') {
     e.preventDefault();
     openCardDialog({ card: store.card(session.cardId) });

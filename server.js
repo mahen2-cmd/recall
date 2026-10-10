@@ -67,8 +67,8 @@ function readBody(req) {
 }
 
 async function speech(req, res) {
-  const text = new URL(req.url, 'http://localhost').searchParams.get('text');
-  const { body, type } = await tts.speak(text);
+  const params = new URL(req.url, 'http://localhost').searchParams;
+  const { body, type } = await tts.speak(params.get('text'), params.get('lang'));
   res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' }).end(body);
 }
 

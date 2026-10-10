@@ -1,6 +1,6 @@
 # Recall
 
-A small, fast flashcard app with Anki's scheduling and a cleaner interface. It runs on your own computer, keeps your cards in a plain file you own, and reads European Portuguese sentences aloud.
+A small, fast flashcard app with Anki's scheduling and a cleaner interface. It runs on your own computer, keeps your cards in a plain file you own, and reads cards aloud: English on one side, European Portuguese on the other.
 
 ![The deck list, showing three Portuguese decks with their new, learning and due counts](docs/decks.png)
 
@@ -13,7 +13,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 - **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
-- **Read aloud.** A speaker button on each side of a card, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
+- **Read aloud.** A speaker button on each side of a card, a language for each side, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
 - **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day.
 - **Keyboard-first studying**, light and dark themes, and a layout that works on a phone.
 - **No dependencies.** The app is plain HTML, CSS and JavaScript; the server is one Node file.
@@ -73,6 +73,7 @@ Each deck has its own:
 - **Scheduling**: Anki default or FSRS.
 - **FSRS retention** (default 90%). Higher means fewer forgotten cards and more reviews.
 - **Auto-play audio**: off, front, back or both sides.
+- **Front language** and **Back language** (default English (US) and Portuguese): the language each side is read in.
 - **Speaking speed**, from normal down to very slow.
 
 ## Importing from Excel
@@ -108,14 +109,14 @@ Importing the same file again adds only the cards that are not in Recall yet. It
 
 ## Voices
 
-The speaker reads text as European Portuguese. Several voice engines are supported, and the best one available is used automatically:
+The speaker reads each side of a card in the language set for it in the deck's settings: European Portuguese, or US or UK English. Several voice engines are supported, and the best one available is used automatically:
 
 | Engine | Needs | Notes |
 |---|---|---|
 | Azure neural voices | An Azure Speech key | Official and supported |
 | Google Translate | Nothing | The default. Unofficial |
 | Microsoft Edge voices | `npm run setup-voice` | Unofficial |
-| Piper | `npm run setup-voice` | Fully offline; the fallback when nothing else is reachable |
+| Piper | `npm run setup-voice` | Fully offline; the fallback when nothing else is reachable. Portuguese only |
 
 The Google Translate and Edge engines use addresses those companies do not publish for this purpose, so either could stop working without notice. When one fails, the next engine takes over. If the Edge voice breaks, running `npm run setup-voice` again updates it.
 
@@ -131,7 +132,7 @@ To change the engine or voice, create `data/tts.json`. Every field is optional:
 ```
 
 - `engine` is `google`, `edge`, `piper` or `azure`.
-- `voice` applies to Edge and Azure, for example `pt-PT-DuarteNeural` for a male voice.
+- `voice` applies to Edge and Azure, for example `pt-PT-DuarteNeural` for a male voice. It is used for its own language; the other languages use a standard voice.
 - `azureKey` and `azureRegion` come from a Speech resource in the Azure portal.
 
 Changes take effect on the next sentence played; no restart is needed.
