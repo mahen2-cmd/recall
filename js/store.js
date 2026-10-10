@@ -1,10 +1,20 @@
 // App state: decks, cards, persistence and the study queue.
 
-import { State, DAY, newSchedule, preview, schedule } from './fsrs.js';
+import { State, dayStart, newSchedule, nextDayAt, preview, schedule } from './fsrs.js';
 
 const KEY = 'recall.v1';
 
-export const DECK_DEFAULTS = { newPerDay: 20, retention: 0.9 };
+// `easyInterval` is the fixed interval (days) for Easy on a card still being learned for
+// the first time, like Anki's "Easy interval". 0 lets FSRS pick it instead.
+// `speak` is which side is read aloud automatically: 'none', 'front', 'back' or 'both'.
+// `speechRate` is the playback speed of that audio, where 1 is the voice's natural pace.
+export const DECK_DEFAULTS = {
+  newPerDay: 20,
+  retention: 0.9,
+  easyInterval: 4,
+  speak: 'none',
+  speechRate: 0.8,
+};
 
 const emptyState = () => ({ version: 1, decks: [], cards: [], daily: {}, settings: {} });
 
@@ -24,17 +34,97 @@ const storage = (() => {
 
 let state = emptyState();
 
-export function load() {
+// ---- Persistence ------------------------------------------------------------
+// When the app is served by server.js, everything is saved to a file on disk through
+// `api/state`. The browser's localStorage always holds a second copy, and is the only
+// store when there is no server (for example on a static host).
+
+const API = 'api/state';
+const disk = { available: false, ok: true, file: null, voice: null };
+let writing = false;
+let dirty = false;
+let retry = null;
+let notify = () => {};
+
+/** Where data is being kept, and the server's voice if any: `{ available, ok, file, voice }`. */
+export const storageInfo = () => ({ ...disk });
+
+/** Call `listener` whenever saving to disk starts failing or recovers. */
+export function onStorageChange(listener) {
+  notify = listener;
+}
+
+function readLocal() {
   try {
     const raw = storage.getItem(KEY);
-    state = raw ? normalize(JSON.parse(raw)) : emptyState();
+    return raw ? normalize(JSON.parse(raw)) : null;
   } catch {
-    state = emptyState();
+    return null;
   }
 }
 
+async function readDisk() {
+  try {
+    const res = await fetch(API, { cache: 'no-store' });
+    const file = res.headers.get('X-Data-File');
+    if (!file || (res.status !== 200 && res.status !== 204)) return null;
+    disk.available = true;
+    disk.file = decodeURIComponent(file);
+    disk.voice = decodeURIComponent(res.headers.get('X-Tts-Engine') ?? '') || null;
+    return res.status === 200 ? normalize(await res.json()) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function load() {
+  const local = readLocal();
+  const saved = await readDisk();
+  // The newer copy wins, so reviews done while the server was down are not lost.
+  const useLocal = local && (!saved || local.savedAt > saved.savedAt);
+  state = (useLocal ? local : saved) ?? emptyState();
+  if (disk.available && useLocal) flush();
+}
+
+function setDiskOk(ok) {
+  if (disk.ok === ok) return;
+  disk.ok = ok;
+  notify();
+}
+
+async function flush() {
+  if (writing) {
+    dirty = true;
+    return;
+  }
+  writing = true;
+  clearTimeout(retry);
+  do {
+    dirty = false;
+    try {
+      const res = await fetch(API, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      });
+      if (!res.ok) throw new Error(`save failed: ${res.status}`);
+      setDiskOk(true);
+    } catch {
+      setDiskOk(false);
+      retry = setTimeout(flush, 5000);
+    }
+  } while (dirty);
+  writing = false;
+}
+
 function save() {
-  storage.setItem(KEY, JSON.stringify(state));
+  state.savedAt = Date.now();
+  try {
+    storage.setItem(KEY, JSON.stringify(state));
+  } catch {
+    // Browser storage full or blocked; the disk copy is what matters.
+  }
+  if (disk.available) flush();
 }
 
 function normalize(data) {
@@ -48,17 +138,23 @@ function normalize(data) {
   const cards = data.cards
     .filter((c) => c && c.id && ids.has(c.deckId))
     .map((c) => ({ ...newSchedule(c.created ?? Date.now()), front: '', back: '', ...c }));
-  return { ...emptyState(), daily: data.daily ?? {}, settings: data.settings ?? {}, decks, cards };
+  return {
+    ...emptyState(),
+    savedAt: data.savedAt ?? 0,
+    daily: data.daily ?? {},
+    settings: data.settings ?? {},
+    decks,
+    cards,
+  };
 }
 
 const uid = () =>
   globalThis.crypto?.randomUUID?.() ??
   Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 
-const startOfDay = (t) => new Date(t).setHours(0, 0, 0, 0);
-
+// Days roll over at 4am, as in Anki.
 function dayKey(t) {
-  const d = new Date(t);
+  const d = new Date(dayStart(t));
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -77,14 +173,8 @@ export function setSetting(name, value) {
 export const decks = () => state.decks;
 export const deck = (id) => state.decks.find((d) => d.id === id);
 
-export function createDeck({ name, newPerDay, retention }) {
-  const d = {
-    id: uid(),
-    name,
-    newPerDay: newPerDay ?? DECK_DEFAULTS.newPerDay,
-    retention: retention ?? DECK_DEFAULTS.retention,
-    created: Date.now(),
-  };
+export function createDeck({ name, ...options }) {
+  const d = { ...DECK_DEFAULTS, ...options, id: uid(), name, created: Date.now() };
   state.decks.push(d);
   save();
   return d;
@@ -129,7 +219,7 @@ const isLearning = (c) => c.state === State.Learning || c.state === State.Relear
 
 function queue(deckId, now) {
   const d = deck(deckId);
-  const today = startOfDay(now);
+  const today = dayStart(now);
   const all = cardsIn(deckId);
   const introduced = all.filter((c) => c.introduced >= today).length;
   const allowance = Math.max(0, d.newPerDay - introduced);
@@ -137,7 +227,7 @@ function queue(deckId, now) {
     learning: all.filter(isLearning).sort((a, b) => a.due - b.due),
     // Review cards are scheduled in whole days, so anything due today counts.
     review: all
-      .filter((c) => c.state === State.Review && c.due < today + DAY)
+      .filter((c) => c.state === State.Review && c.due < nextDayAt(now))
       .sort((a, b) => a.due - b.due),
     fresh: all
       .filter((c) => c.state === State.New)
@@ -161,14 +251,28 @@ export function nextCard(deckId, now = Date.now()) {
   return q.review[0] ?? q.fresh[0] ?? q.learning[0];
 }
 
+// Deterministic per card and review, so the intervals shown are the ones applied.
+function fuzzFactor(c) {
+  let h = 2166136261;
+  for (const ch of `${c.id}:${c.reps}`) h = Math.imul(h ^ ch.codePointAt(0), 16777619);
+  h = Math.imul(h ^ (h >>> 15), h | 1);
+  h ^= h + Math.imul(h ^ (h >>> 7), h | 61);
+  return ((h ^ (h >>> 14)) >>> 0) / 4294967296;
+}
+
+function schedulingOptions(c) {
+  const { retention, easyInterval } = deck(c.deckId);
+  return { retention, easyInterval, fuzz: fuzzFactor(c) };
+}
+
 export function previewCard(id, now = Date.now()) {
   const c = card(id);
-  return preview(c, now, { retention: deck(c.deckId).retention });
+  return preview(c, now, schedulingOptions(c));
 }
 
 export function answerCard(id, rating, now = Date.now()) {
   const c = card(id);
-  const next = schedule(c, rating, now, { retention: deck(c.deckId).retention });
+  const next = schedule(c, rating, now, schedulingOptions(c));
   if (c.state === State.New) c.introduced = now;
   Object.assign(c, next);
   const key = dayKey(now);
@@ -181,7 +285,7 @@ export function answerCard(id, rating, now = Date.now()) {
 export function stats(now = Date.now()) {
   const reviewedToday = state.daily[dayKey(now)] ?? 0;
   let streak = 0;
-  const day = new Date(startOfDay(now));
+  const day = new Date(dayStart(now));
   if (!reviewedToday) day.setDate(day.getDate() - 1);
   while (state.daily[dayKey(day)] > 0) {
     streak++;

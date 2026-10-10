@@ -5,7 +5,8 @@
   "type": "module",
   "description": "A simple spaced-repetition flashcard app using the FSRS algorithm",
   "scripts": {
-    "start": "python3 -m http.server 5173",
+    "start": "node server.js",
+    "setup-voice": "bash scripts/setup-voice.sh",
     "test": "node --test"
   }
 }

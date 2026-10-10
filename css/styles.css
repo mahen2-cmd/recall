@@ -152,6 +152,27 @@ select {
   border-radius: 3px;
 }
 
+.save-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 560;
+  cursor: default;
+}
+.save-chip .icon svg {
+  width: 15px;
+  height: 15px;
+}
+.save-chip.error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .page-head {
   display: flex;
   align-items: flex-end;
@@ -594,6 +615,25 @@ kbd {
   line-height: 1.5;
   animation: reveal 0.2s ease;
 }
+.speak {
+  align-self: center;
+  width: 38px;
+  height: 38px;
+  margin-top: 14px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.speak:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .flashcard hr {
   width: 100%;
   border: 0;
@@ -790,6 +830,12 @@ dialog.modal::backdrop {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.field-note {
+  display: block;
+  margin-top: -8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
 .field-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -882,6 +928,9 @@ dialog.modal::backdrop {
     display: none;
   }
   .study-top .pill span {
+    display: none;
+  }
+  .save-chip:not(.error) span:last-child {
     display: none;
   }
 }

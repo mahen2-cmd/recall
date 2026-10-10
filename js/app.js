@@ -5,7 +5,7 @@ const app = document.getElementById('app');
 const toasts = document.getElementById('toasts');
 
 // The card currently on screen in study mode.
-const session = { deckId: null, cardId: null, revealed: false, done: 0 };
+const session = { deckId: null, cardId: null, revealed: false, done: 0, spoken: null };
 let query = '';
 
 // ---- DOM helpers ----------------------------------------------------------
@@ -35,6 +35,10 @@ const ICONS = {
   upload: '<path d="M12 16V5M7 9l5-5 5 5M5 20h14"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  disk: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
+  browser: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/>',
+  alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
+  speaker: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   play: '<path d="M7 5l12 7-12 7V5z"/>',
 };
 
@@ -78,6 +82,68 @@ function countPills(c) {
     h('span', { class: `pill ${n ? kind : 'zero'}`, title: `${n} ${label.toLowerCase()}` }, h('b', null, String(n)), h('span', null, label));
   return h('div', { class: 'counts' }, pill('new', c.new, 'New'), pill('learning', c.learning, 'Learning'), pill('review', c.review, 'Due'));
 }
+
+// ---- Speech ---------------------------------------------------------------
+// Uses the server's voice when there is one, otherwise the browser's own.
+
+const SPEECH_LANG = 'pt-PT';
+let player = null;
+let speechToken = 0;
+
+const ttsUrl = (text) => `api/tts?text=${encodeURIComponent(text)}`;
+const serverVoice = () => store.storageInfo().voice;
+const canSpeak = () => Boolean(serverVoice()) || 'speechSynthesis' in window;
+
+function stopSpeaking() {
+  speechToken++;
+  player?.pause();
+  player = null;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+async function speak(text, rate = 1) {
+  stopSpeaking();
+  if (!text.trim()) return;
+  if (!serverVoice()) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = SPEECH_LANG;
+    utterance.rate = rate;
+    utterance.voice = speechSynthesis.getVoices().find((v) => v.lang.replace('_', '-') === SPEECH_LANG) ?? null;
+    speechSynthesis.speak(utterance);
+    return;
+  }
+  const token = speechToken;
+  try {
+    const res = await fetch(ttsUrl(text));
+    if (!res.ok) throw new Error(await res.text());
+    const url = URL.createObjectURL(await res.blob());
+    if (token !== speechToken) return; // moved on while the audio was loading
+    player = new Audio(url);
+    player.playbackRate = rate; // the browser keeps the pitch natural
+    player.addEventListener('ended', () => URL.revokeObjectURL(url));
+    await player.play();
+  } catch (error) {
+    // The browser refuses sound before the first click or key press; that is not an error.
+    const blocked = error.name === 'NotAllowedError' || error.name === 'AbortError';
+    if (token === speechToken && !blocked) toast(error.message || 'Could not play audio');
+  }
+}
+
+/** Generate audio ahead of time so it plays instantly later. */
+function prepareSpeech(text) {
+  if (serverVoice() && text.trim()) fetch(ttsUrl(text)).catch(() => {});
+}
+
+const speaksSide = (deck, side) => deck.speak === side || deck.speak === 'both';
+
+function prepareCardSpeech(card) {
+  const deck = store.deck(card.deckId);
+  if (speaksSide(deck, 'front')) prepareSpeech(card.front);
+  if (speaksSide(deck, 'back')) prepareSpeech(card.back);
+}
+
+const speakButton = (text, label, rate) =>
+  canSpeak() && h('button', { class: 'speak', type: 'button', title: `${label} (R)`, 'aria-label': label, onclick: () => speak(text, rate) }, icon('speaker'));
 
 // ---- Theme ----------------------------------------------------------------
 
@@ -161,6 +227,22 @@ function openDeckDialog(deck) {
   const name = h('input', { type: 'text', required: true, maxLength: 80, value: deck?.name ?? '', placeholder: 'e.g. Spanish vocabulary' });
   const newPerDay = h('input', { type: 'number', required: true, min: 0, max: 9999, step: 1, value: defaults.newPerDay });
   const retention = h('input', { type: 'number', required: true, min: 70, max: 97, step: 1, value: Math.round(defaults.retention * 100) });
+  const easyInterval = h('input', { type: 'number', required: true, min: 0, max: 365, step: 1, value: defaults.easyInterval });
+  const speakSide = h(
+    'select',
+    null,
+    [['none', 'Off'], ['front', 'Front'], ['back', 'Back'], ['both', 'Both sides']].map(([value, label]) =>
+      h('option', { value, selected: value === defaults.speak }, label),
+    ),
+  );
+
+  const speechRate = h(
+    'select',
+    null,
+    [[1, 'Normal'], [0.9, 'Slightly slower'], [0.8, 'Slower'], [0.7, 'Slow'], [0.6, 'Very slow']].map(([value, label]) =>
+      h('option', { value, selected: value === defaults.speechRate }, label),
+    ),
+  );
 
   const form = h(
     'form',
@@ -171,6 +253,9 @@ function openDeckDialog(deck) {
           name: name.value.trim(),
           newPerDay: Number(newPerDay.value),
           retention: Number(retention.value) / 100,
+          easyInterval: Number(easyInterval.value),
+          speak: speakSide.value,
+          speechRate: Number(speechRate.value),
         };
         if (!values.name) return name.focus();
         if (deck) store.updateDeck(deck.id, values);
@@ -185,7 +270,22 @@ function openDeckDialog(deck) {
       h('label', { class: 'field' }, h('span', null, 'New cards per day'), newPerDay),
       h('label', { class: 'field' }, h('span', null, 'Desired retention (%)'), retention),
     ),
-    h('small', { class: 'modal-note', style: 'color: var(--muted)' }, 'Higher retention means you forget less but review more often. 90% is a good default.'),
+    h(
+      'label',
+      { class: 'field' },
+      h('span', null, 'Easy interval for new cards (days)'),
+      easyInterval,
+      h('small', null, 'Pressing Easy on a card you are learning for the first time schedules it this far out. Set 0 to let FSRS choose, as Anki does when FSRS is on.'),
+    ),
+    canSpeak() && [
+      h(
+        'div',
+        { class: 'field-row' },
+        h('label', { class: 'field' }, h('span', null, 'Auto-play audio'), speakSide),
+        h('label', { class: 'field' }, h('span', null, 'Speaking speed'), speechRate),
+      ),
+      h('small', { class: 'field-note' }, 'Which side is spoken in Portuguese when it appears. You can always play either side with its speaker button.'),
+    ],
     h(
       'div',
       { class: 'modal-foot' },
@@ -226,11 +326,12 @@ function openCardDialog({ card, deckId }) {
         if (!values.back) return back.focus();
         if (card) {
           store.updateCard(card.id, { ...values, deckId: deckSelect.value });
+          prepareCardSpeech(store.card(card.id));
           dialog.close();
           return;
         }
         // Stay open so several cards can be added in a row.
-        store.addCard(deckSelect.value, values.front, values.back);
+        prepareCardSpeech(store.addCard(deckSelect.value, values.front, values.back));
         front.value = back.value = '';
         note.textContent = 'Card added';
         note.className = 'note ok';
@@ -330,12 +431,24 @@ function loadSampleDeck() {
 
 // ---- Views ----------------------------------------------------------------
 
+function storageChip() {
+  const { available, ok, file } = store.storageInfo();
+  if (!available) {
+    return h('span', { class: 'save-chip', title: 'Saved in this browser only. Start the app with "npm start" to save to a file on your computer.' }, icon('browser'), h('span', null, 'Browser only'));
+  }
+  if (!ok) {
+    return h('span', { class: 'save-chip error', title: `Cannot reach the Recall server, so changes are not reaching ${file}. They are kept in this browser and will be saved once the server is running again.` }, icon('alert'), h('span', null, 'Not saved to disk'));
+  }
+  return h('span', { class: 'save-chip', title: `Saved to ${file}` }, icon('disk'), h('span', null, 'Saved on this computer'));
+}
+
 function topbar() {
   const dark = document.documentElement.dataset.theme === 'dark';
   return h(
     'header',
     { class: 'topbar' },
     h('a', { class: 'brand', href: '#/' }, h('span', { class: 'brand-mark' }), 'Recall'),
+    storageChip(),
     iconButton('upload', 'Import backup', importBackup),
     iconButton('download', 'Export backup', exportBackup),
     iconButton(dark ? 'sun' : 'moon', dark ? 'Light theme' : 'Dark theme', toggleTheme),
@@ -538,7 +651,7 @@ function rate(rating) {
 
 function renderStudy(deck) {
   const now = Date.now();
-  if (session.deckId !== deck.id) Object.assign(session, { deckId: deck.id, cardId: null, revealed: false, done: 0 });
+  if (session.deckId !== deck.id) Object.assign(session, { deckId: deck.id, cardId: null, revealed: false, done: 0, spoken: null });
   const card = currentStudyCard(deck.id, now);
   const c = store.counts(deck.id, now);
   const progress = session.done + c.total ? (session.done / (session.done + c.total)) * 100 : 100;
@@ -585,6 +698,16 @@ function renderStudy(deck) {
   const status = cardStatus(card, now);
   const options = session.revealed ? store.previewCard(card.id, now) : null;
 
+  // Read the side that has just appeared, once.
+  const shown = `${card.id}:${session.revealed}`;
+  if (session.spoken !== shown) {
+    session.spoken = shown;
+    const side = session.revealed ? 'back' : 'front';
+    if (speaksSide(deck, side)) speak(card[side], deck.speechRate);
+    else stopSpeaking();
+    if (!session.revealed && speaksSide(deck, 'back')) prepareSpeech(card.back);
+  }
+
   app.replaceChildren(
     h(
       'div',
@@ -601,7 +724,8 @@ function renderStudy(deck) {
           iconButton('trash', 'Delete card', () => removeCard(card), 'danger'),
         ),
         h('div', { class: 'face question' }, card.front),
-        session.revealed && [h('hr'), h('div', { class: 'face answer' }, card.back)],
+        speakButton(card.front, 'Listen to the front', deck.speechRate),
+        session.revealed && [h('hr'), h('div', { class: 'face answer' }, card.back), speakButton(card.back, 'Listen to the back', deck.speechRate)],
       ),
       h(
         'div',
@@ -614,7 +738,7 @@ function renderStudy(deck) {
                 h(
                   'button',
                   { class: `rate ${kind}`, type: 'button', onclick: () => rate(rating) },
-                  h('span', { class: 'ivl' }, formatInterval(options[rating].due - now)),
+                  h('span', { class: 'ivl' }, (options[rating].state === State.Review ? '' : '<') + formatInterval(options[rating].due - now)),
                   h('span', { class: 'label' }, label),
                   h('kbd', null, String(rating)),
                 ),
@@ -635,7 +759,10 @@ function route() {
 
 function render() {
   const { view, deck } = route();
-  if (view !== 'study') session.deckId = null;
+  if (view !== 'study' && session.deckId) {
+    session.deckId = null;
+    stopSpeaking();
+  }
   if (view !== 'deck') query = '';
   if (view === 'deck' && deck) renderDeck(deck);
   else if (view === 'study' && deck) renderStudy(deck);
@@ -654,6 +781,12 @@ document.addEventListener('keydown', (e) => {
     else reveal();
   } else if (session.revealed && ['1', '2', '3', '4'].includes(e.key)) {
     rate(Number(e.key));
+  } else if (e.key.toLowerCase() === 'r' && canSpeak()) {
+    // Replay: the side this deck reads aloud, or else whichever side appeared last.
+    const card = store.card(session.cardId);
+    const deck = store.deck(card.deckId);
+    const side = deck.speak === 'front' || !session.revealed ? 'front' : 'back';
+    speak(card[side], deck.speechRate);
   } else if (e.key.toLowerCase() === 'e') {
     e.preventDefault();
     openCardDialog({ card: store.card(session.cardId) });
@@ -670,6 +803,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && !document.querySelector('dialog[open]') && route().view !== 'study') render();
 });
 
-store.load();
+await store.load();
+store.onStorageChange(render);
 applyTheme();
 render();
