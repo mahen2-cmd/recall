@@ -249,6 +249,10 @@ select {
   border-color: var(--danger);
   color: #fff;
 }
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .btn.ghost {
   border-color: transparent;
   background: transparent;
@@ -840,6 +844,60 @@ dialog.modal::backdrop {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.import-preview {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  font-size: 13.5px;
+}
+.import-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.import-preview th,
+.import-preview td {
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: top;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-preview th {
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.import-preview td {
+  border-top: 1px solid var(--border);
+}
+.import-more {
+  padding: 7px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+}
+.import-summary {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13.5px;
 }
 
 .modal-foot {

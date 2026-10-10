@@ -9,6 +9,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 ## Features
 
 - **Decks and cards.** Create as many decks as you like; add, edit, move, search and delete cards.
+- **Import from Excel.** Turn a spreadsheet of words into cards in one step.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
 - **Read aloud.** A speaker button on each side of a card, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
@@ -73,6 +74,18 @@ Each deck has its own:
 - **Auto-play audio**: off, front, back or both sides.
 - **Speaking speed**, from normal down to very slow.
 
+## Importing from Excel
+
+Open a deck and press **Import**, then choose a file. Each row becomes one card.
+
+- **Files:** Excel `.xlsx`, or `.csv` and tab-separated text. Old `.xls` files need to be saved as `.xlsx` first.
+- **Columns:** pick which column is the front and which is the back. Column A and B are used by default.
+- **Header row:** tick the box if the first row holds column titles.
+- **Duplicates:** rows whose front is already in the deck are skipped, so the same file can be imported again after you add to it.
+- **Preview:** the dialog shows the first cards and how many rows will be skipped before anything is added.
+
+Only the first sheet of a workbook is read, and rows missing either a front or a back are left out. Imported cards are new cards, in the order they appear in the file.
+
 ## Voices
 
 The speaker reads text as European Portuguese. Several voice engines are supported, and the best one available is used automatically:
@@ -128,6 +141,7 @@ index.html          the page
 css/styles.css      all styling, light and dark
 js/fsrs.js          the scheduler: Anki's SM-2 and FSRS-6 modes, with no browser code
 js/store.js         decks, cards, the study queue and saving
+js/importer.js      reads .xlsx and CSV files into rows
 js/app.js           the interface
 server.js           serves the app and reads and writes data/recall.json
 tts.js              the voice engines and the audio cache

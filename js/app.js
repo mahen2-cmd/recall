@@ -1,4 +1,5 @@
 import { DAY, MINUTE, Rating, State } from './fsrs.js';
+import { parseSpreadsheet } from './importer.js';
 import * as store from './store.js';
 
 const app = document.getElementById('app');
@@ -386,6 +387,135 @@ async function removeCard(card) {
   render();
 }
 
+// ---- Import cards from a spreadsheet ------------------------------------------
+
+const columnName = (i) => (i >= 26 ? columnName(Math.floor(i / 26) - 1) : '') + String.fromCharCode(65 + (i % 26));
+const cardKey = (text) => text.trim().toLowerCase();
+
+/** Work out which rows become cards, and why the others are left out. */
+function planImport(rows, { front, back, header, skipExisting, existing }) {
+  const seen = new Set(skipExisting ? existing : []);
+  const plan = { cards: [], incomplete: 0, duplicates: 0 };
+  for (const row of header ? rows.slice(1) : rows) {
+    const pair = [row[front] ?? '', row[back] ?? ''];
+    if (!pair[0] || !pair[1]) plan.incomplete++;
+    else if (skipExisting && seen.has(cardKey(pair[0]))) plan.duplicates++;
+    else {
+      seen.add(cardKey(pair[0]));
+      plan.cards.push(pair);
+    }
+  }
+  return plan;
+}
+
+function pickImportFile(deck) {
+  const input = h('input', {
+    type: 'file',
+    accept: '.xlsx,.csv,.tsv,.txt',
+    onchange: async () => {
+      const file = input.files[0];
+      if (!file) return;
+      try {
+        const rows = await parseSpreadsheet(await file.arrayBuffer(), file.name);
+        if (!rows.length) throw new Error('That file has no rows to import.');
+        openImportDialog(deck, file.name, rows);
+      } catch (error) {
+        toast(error.message || 'Could not read that file.');
+      }
+    },
+  });
+  input.click();
+}
+
+function openImportDialog(deck, fileName, rows) {
+  const width = Math.max(...rows.map((row) => row.length));
+  const existing = store.cardsIn(deck.id).map((card) => cardKey(card.front));
+  const columnSelect = (selected) =>
+    h(
+      'select',
+      { onchange: () => update() },
+      Array.from({ length: width }, (_, i) => {
+        const sample = rows.find((row) => row[i])?.[i] ?? 'empty';
+        const label = `${columnName(i)}: ${sample.length > 28 ? `${sample.slice(0, 28)}…` : sample}`;
+        return h('option', { value: i, selected: i === selected }, label);
+      }),
+    );
+  const front = columnSelect(0);
+  const back = columnSelect(Math.min(1, width - 1));
+  const header = h('input', { type: 'checkbox', onchange: () => update() });
+  const skipExisting = h('input', { type: 'checkbox', checked: true, onchange: () => update() });
+  const preview = h('div', { class: 'import-preview' });
+  const summary = h('p', { class: 'import-summary' });
+  const submit = h('button', { class: 'btn primary', type: 'submit' });
+
+  const plan = () =>
+    planImport(rows, {
+      front: Number(front.value),
+      back: Number(back.value),
+      header: header.checked,
+      skipExisting: skipExisting.checked,
+      existing,
+    });
+
+  function update() {
+    const { cards, incomplete, duplicates } = plan();
+    const sameColumn = front.value === back.value;
+    const table = h(
+      'table',
+      null,
+      h('thead', null, h('tr', null, h('th', null, 'Front'), h('th', null, 'Back'))),
+      h('tbody', null, cards.slice(0, 5).map(([f, b]) => h('tr', null, h('td', null, f), h('td', null, b)))),
+    );
+    const more = cards.length > 5 ? [h('div', { class: 'import-more' }, `and ${cards.length - 5} more`)] : [];
+    preview.replaceChildren(table, ...more);
+    preview.hidden = !cards.length;
+    const skipped = [
+      incomplete && `${plural(incomplete, 'row')} missing a front or back`,
+      duplicates && `${plural(duplicates, 'duplicate')}`,
+    ].filter(Boolean);
+    summary.textContent = sameColumn
+      ? 'Front and back are set to the same column. Choose two different columns.'
+      : (cards.length ? '' : 'Nothing to import. ') + (skipped.length ? `Skipping ${skipped.join(' and ')}.` : '');
+    summary.hidden = !summary.textContent;
+    submit.textContent = cards.length ? `Import ${plural(cards.length, 'card')}` : 'Import';
+    submit.disabled = !cards.length || sameColumn;
+  }
+
+  const form = h(
+    'form',
+    {
+      onsubmit: (e) => {
+        e.preventDefault();
+        const { cards } = plan();
+        if (!cards.length) return;
+        store.addCards(deck.id, cards);
+        dialog.close();
+        toast(`Imported ${plural(cards.length, 'card')} into ${deck.name}`);
+      },
+    },
+    h('p', { class: 'message', style: 'margin-bottom: 16px' }, `${fileName}: ${plural(rows.length, 'row')}${width > 26 ? '' : `, ${plural(width, 'column')}`}`),
+    h(
+      'div',
+      { class: 'field-row' },
+      h('label', { class: 'field' }, h('span', null, 'Front'), front),
+      h('label', { class: 'field' }, h('span', null, 'Back'), back),
+    ),
+    h('label', { class: 'check' }, header, 'The first row is a header, skip it'),
+    h('label', { class: 'check' }, skipExisting, 'Skip cards already in this deck'),
+    preview,
+    summary,
+    h(
+      'div',
+      { class: 'modal-foot' },
+      h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Cancel'),
+      submit,
+    ),
+  );
+  update();
+  const dialog = modal(`Import into ${deck.name}`, form, { onclose: render });
+  submit.focus();
+}
+
 // ---- Backup ---------------------------------------------------------------
 
 function exportBackup() {
@@ -598,8 +728,13 @@ function renderDeck(deck) {
         'div',
         { class: 'empty' },
         h('h2', null, 'No cards yet'),
-        h('p', null, 'Add a question on the front and its answer on the back.'),
-        h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'button', onclick: () => openCardDialog({ deckId: deck.id }) }, icon('plus'), 'Add card')),
+        h('p', null, 'Add a question on the front and its answer on the back, or import a list from an Excel file.'),
+        h(
+          'div',
+          { class: 'row' },
+          h('button', { class: 'btn primary', type: 'button', onclick: () => openCardDialog({ deckId: deck.id }) }, icon('plus'), 'Add card'),
+          h('button', { class: 'btn', type: 'button', onclick: () => pickImportFile(deck) }, icon('upload'), 'Import from Excel'),
+        ),
       );
   if (cards.length) drawList();
 
@@ -618,6 +753,7 @@ function renderDeck(deck) {
           { class: 'actions' },
           iconButton('edit', 'Deck settings', () => openDeckDialog(deck)),
           iconButton('trash', 'Delete deck', () => removeDeck(deck), 'danger'),
+          h('button', { class: 'btn', type: 'button', title: 'Import cards from an Excel or CSV file', onclick: () => pickImportFile(deck) }, icon('upload'), 'Import'),
           h('button', { class: 'btn', type: 'button', onclick: () => openCardDialog({ deckId: deck.id }) }, icon('plus'), 'Add card'),
           c.total > 0 && h('a', { class: 'btn primary', href: `#/study/${deck.id}` }, icon('play'), `Study ${c.total}`),
         ),

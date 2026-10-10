@@ -105,3 +105,12 @@ test('export and import round-trip', () => {
   assert.equal(store.cardsIn(deck.id)[0].front, 'q');
   assert.throws(() => store.importData('{"nope":true}'));
 });
+
+test('addCards adds many cards in file order as new cards', () => {
+  const deck = setup();
+  const added = store.addCards(deck.id, [['um', 'one'], ['dois', 'two'], ['três', 'three']], T0);
+  assert.equal(added, 3);
+  assert.equal(store.counts(deck.id, T0).new, 3);
+  assert.equal(store.nextCard(deck.id, T0).front, 'um');
+  assert.deepEqual(store.cardsIn(deck.id).map((c) => c.back), ['one', 'two', 'three']);
+});

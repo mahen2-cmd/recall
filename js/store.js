@@ -207,6 +207,17 @@ export function addCard(deckId, front, back, now = Date.now()) {
   return c;
 }
 
+/** Add many cards at once from `[front, back]` pairs. Returns how many were added. */
+export function addCards(deckId, pairs, now = Date.now()) {
+  pairs.forEach(([front, back], i) => {
+    // Stagger creation times so the cards keep the order they had in the file.
+    const created = now + i;
+    state.cards.push({ id: uid(), deckId, front, back, created, updated: created, ...newSchedule(now) });
+  });
+  save();
+  return pairs.length;
+}
+
 export function updateCard(id, patch) {
   Object.assign(card(id), patch, { updated: Date.now() });
   save();
