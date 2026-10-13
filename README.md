@@ -9,6 +9,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 ## Features
 
 - **Decks and cards.** Create as many decks as you like; add, edit, move, search and delete cards.
+- **Filters.** Narrow a deck's card list to new, learning, due, not-yet-due or reserve cards, by when the next review falls, when a card was added or how often it was forgotten, and sort it.
 - **Import from Excel.** Turn a spreadsheet of words into cards in one step.
 - **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.

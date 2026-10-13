@@ -271,6 +271,55 @@ export function pullFromReserve(deckId, n = Infinity) {
   return pulled.length;
 }
 
+/** The group a card is listed under: 'reserve', 'new', 'learning', 'due' or 'later'. */
+export function cardGroup(c, now = Date.now()) {
+  if (c.reserved) return 'reserve';
+  if (c.state === State.New) return 'new';
+  if (isLearning(c)) return 'learning';
+  return c.due < nextDayAt(now) ? 'due' : 'later';
+}
+
+const SORTS = {
+  newest: (a, b) => b.created - a.created,
+  oldest: (a, b) => a.created - b.created,
+  front: (a, b) => a.front.localeCompare(b.front, undefined, { sensitivity: 'base' }),
+  lapses: (a, b) => b.lapses - a.lapses || b.created - a.created,
+};
+
+/**
+ * The cards of a deck that pass every filter given, sorted.
+ *   text    words to find on either side
+ *   groups  card groups to keep (see `cardGroup`); none means all of them
+ *   due     'overdue', 'today' (or earlier), 'week' or 'month': when the next review falls.
+ *           New and reserve cards have no review coming, so any of these leaves them out.
+ *   added   'today', 'week' or 'month': how recently the card was created
+ *   lapses  'some' (forgotten at least once) or 'many' (three times or more)
+ *   sort    'newest', 'oldest', 'due' (soonest first), 'front' (A to Z) or 'lapses'
+ */
+export function findCards(deckId, { text = '', groups = [], due = 'any', added = 'any', lapses = 'any', sort = 'newest' } = {}, now = Date.now()) {
+  const q = text.trim().toLowerCase();
+  const today = dayStart(now);
+  const tomorrow = nextDayAt(now);
+  const wanted = new Set(groups);
+  const scheduled = (c) => !c.reserved && c.state !== State.New;
+  const dueBefore = { today: tomorrow, week: tomorrow + 6 * DAY, month: tomorrow + 29 * DAY }[due];
+  const addedSince = { today, week: today - 6 * DAY, month: today - 29 * DAY }[added];
+  const minLapses = { some: 1, many: 3 }[lapses] ?? 0;
+  const dueAt = (c) => (scheduled(c) ? c.due : Infinity);
+
+  return cardsIn(deckId)
+    .filter(
+      (c) =>
+        (!q || `${c.front}\n${c.back}`.toLowerCase().includes(q)) &&
+        (!wanted.size || wanted.has(cardGroup(c, now))) &&
+        (due !== 'overdue' || (c.state === State.Review && !c.reserved && c.due < today)) &&
+        (!dueBefore || (scheduled(c) && c.due < dueBefore)) &&
+        (!addedSince || c.created >= addedSince) &&
+        c.lapses >= minLapses,
+    )
+    .sort(sort === 'due' ? (a, b) => dueAt(a) - dueAt(b) || b.created - a.created : (SORTS[sort] ?? SORTS.newest));
+}
+
 export function deleteCard(id) {
   state.cards = state.cards.filter((c) => c.id !== id);
   save();

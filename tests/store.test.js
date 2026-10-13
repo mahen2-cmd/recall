@@ -166,6 +166,47 @@ test('reserve cards stay out of study until they are pulled', () => {
   assert.equal(store.counts(deck.id, T0).reserve, 1);
 });
 
+test('findCards filters by group, text, dates and lapses, and sorts', () => {
+  const deck = setup();
+  const fresh = store.addCard(deck.id, 'Banana', 'yellow', T0);
+  const learning = store.addCard(deck.id, 'apple', 'red', T0 + 1);
+  const review = store.addCard(deck.id, 'Cherry', 'red too', T0 + 2);
+  const held = store.addCard(deck.id, 'date', 'brown', T0 + 3, { reserved: true });
+  store.answerCard(learning.id, Rating.Again, T0);
+  store.answerCard(review.id, Rating.Easy, T0);
+  const dueDay = store.card(review.id).due;
+  const ids = (filters, now = T0) => store.findCards(deck.id, filters, now).map((c) => c.id);
+
+  assert.deepEqual(ids(), [held.id, review.id, learning.id, fresh.id]);
+  assert.deepEqual(ids({ groups: ['new'] }), [fresh.id]);
+  assert.deepEqual(ids({ groups: ['reserve', 'learning'] }), [held.id, learning.id]);
+  assert.deepEqual(ids({ groups: ['later'] }), [review.id]);
+  assert.deepEqual(ids({ groups: ['due'] }), []);
+  assert.deepEqual(ids({ groups: ['due'] }, dueDay), [review.id]);
+  assert.equal(store.cardGroup(store.card(review.id), dueDay), 'due');
+
+  assert.deepEqual(ids({ text: ' RED ' }), [review.id, learning.id]);
+  assert.deepEqual(ids({ text: 'red', groups: ['learning'] }), [learning.id]);
+
+  // Only cards with a review coming have a due date.
+  assert.deepEqual(ids({ due: 'today' }), [learning.id]);
+  assert.deepEqual(ids({ due: 'week' }), [review.id, learning.id]);
+  assert.deepEqual(ids({ due: 'overdue' }, dueDay), []);
+  assert.deepEqual(ids({ due: 'overdue' }, dueDay + DAY), [review.id]);
+
+  assert.deepEqual(ids({ added: 'today' }, T0 + DAY), []);
+  assert.equal(ids({ added: 'week' }, T0 + DAY).length, 4);
+
+  store.answerCard(review.id, Rating.Again, dueDay);
+  assert.deepEqual(ids({ lapses: 'some' }, dueDay), [review.id]);
+  assert.deepEqual(ids({ lapses: 'many' }, dueDay), []);
+
+  assert.deepEqual(ids({ sort: 'oldest' }), [fresh.id, learning.id, review.id, held.id]);
+  assert.deepEqual(ids({ sort: 'front' }), [learning.id, fresh.id, review.id, held.id]);
+  assert.deepEqual(ids({ sort: 'due' }, dueDay).slice(2), [held.id, fresh.id]);
+  assert.equal(ids({ sort: 'lapses' }, dueDay)[0], review.id);
+});
+
 test('export and import round-trip', () => {
   const deck = setup();
   store.addCard(deck.id, 'q', 'a', T0);

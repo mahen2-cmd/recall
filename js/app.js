@@ -9,6 +9,25 @@ const toasts = document.getElementById('toasts');
 const session = { deckId: null, cardId: null, revealed: false, done: 0, spoken: null };
 let query = '';
 
+// Filters on a deck's card list, reset whenever a different deck is opened.
+const NO_FILTERS = { groups: [], due: 'any', added: 'any', lapses: 'any', sort: 'newest' };
+let filters = { ...NO_FILTERS };
+let filtersDeck = null;
+
+const CARD_GROUPS = [
+  ['new', 'New'],
+  ['learning', 'Learning'],
+  ['due', 'Due'],
+  ['later', 'Not due yet'],
+  ['reserve', 'On reserve'],
+];
+const FILTER_SELECTS = [
+  ['due', 'Next review', [['any', 'Any time'], ['overdue', 'Overdue'], ['today', 'Today or overdue'], ['week', 'Within 7 days'], ['month', 'Within 30 days']]],
+  ['added', 'Added', [['any', 'Any time'], ['today', 'Today'], ['week', 'In the last 7 days'], ['month', 'In the last 30 days']]],
+  ['lapses', 'Forgotten', [['any', 'Any'], ['some', 'At least once'], ['many', '3 times or more']]],
+  ['sort', 'Sort by', [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['due', 'Next review'], ['front', 'Front, A to Z'], ['lapses', 'Most forgotten']]],
+];
+
 // ---- DOM helpers ----------------------------------------------------------
 
 function h(tag, attrs, ...children) {
@@ -830,17 +849,66 @@ function reserveBar(deck, n) {
 function renderDeck(deck) {
   const now = Date.now();
   const c = store.counts(deck.id, now);
-  const cards = store.cardsIn(deck.id).sort((a, b) => b.created - a.created);
+  const cards = store.cardsIn(deck.id);
+  if (filtersDeck !== deck.id) {
+    filters = { ...NO_FILTERS };
+    filtersDeck = deck.id;
+  }
+  const filtering = Object.keys(NO_FILTERS).some((key) => key !== 'sort' && String(filters[key]) !== String(NO_FILTERS[key]));
+  const setFilters = (patch) => {
+    filters = { ...filters, ...patch };
+    render();
+  };
+
+  const groupCounts = {};
+  for (const card of cards) {
+    const group = store.cardGroup(card, now);
+    groupCounts[group] = (groupCounts[group] ?? 0) + 1;
+  }
+  const filterBar = [
+    h(
+      'div',
+      { class: 'chips', role: 'group', 'aria-label': 'Show cards that are' },
+      CARD_GROUPS.map(([group, label]) => {
+        const on = filters.groups.includes(group);
+        return h(
+          'button',
+          {
+            class: 'chip',
+            type: 'button',
+            'aria-pressed': String(on),
+            onclick: () => setFilters({ groups: on ? filters.groups.filter((g) => g !== group) : [...filters.groups, group] }),
+          },
+          label,
+          h('b', null, (groupCounts[group] ?? 0).toLocaleString()),
+        );
+      }),
+    ),
+    h(
+      'div',
+      { class: 'filters' },
+      FILTER_SELECTS.map(([key, label, options]) => {
+        const select = h(
+          'select',
+          { onchange: () => setFilters({ [key]: select.value }) },
+          options.map(([value, text]) => h('option', { value, selected: value === filters[key] }, text)),
+        );
+        return h('label', { class: key !== 'sort' && filters[key] !== NO_FILTERS[key] ? 'on' : '' }, h('span', null, label), select);
+      }),
+      filtering && h('button', { class: 'btn ghost', type: 'button', onclick: () => setFilters({ ...NO_FILTERS, sort: filters.sort }) }, icon('close'), 'Clear filters'),
+    ),
+  ];
 
   const list = h('div');
   const shown = h('span', { class: 'count' });
 
   const drawList = () => {
-    const q = query.trim().toLowerCase();
-    const matches = q ? cards.filter((card) => `${card.front}\n${card.back}`.toLowerCase().includes(q)) : cards;
-    shown.textContent = q ? `${matches.length} of ${plural(cards.length, 'card')}` : plural(cards.length, 'card');
+    const q = query.trim();
+    const matches = store.findCards(deck.id, { text: q, ...filters }, now);
+    shown.textContent = q || filtering ? `${matches.length.toLocaleString()} of ${plural(cards.length, 'card')}` : plural(cards.length, 'card');
     if (!matches.length) {
-      list.replaceChildren(h('div', { class: 'card-list' }, h('div', { class: 'list-empty' }, `No cards match “${query.trim()}”.`)));
+      const message = q && !filtering ? `No cards match “${q}”.` : q ? `No cards match “${q}” with these filters.` : 'No cards match these filters.';
+      list.replaceChildren(h('div', { class: 'card-list' }, h('div', { class: 'list-empty' }, message)));
       return;
     }
     list.replaceChildren(
@@ -879,7 +947,7 @@ function renderDeck(deck) {
   });
 
   const content = cards.length
-    ? [reserveBar(deck, c.reserve), h('div', { class: 'toolbar' }, h('div', { class: 'search' }, icon('search'), search), shown), list]
+    ? [reserveBar(deck, c.reserve), h('div', { class: 'toolbar' }, h('div', { class: 'search' }, icon('search'), search), shown), filterBar, list]
     : h(
         'div',
         { class: 'empty' },
@@ -1399,7 +1467,10 @@ function render() {
     session.deckId = null;
     stopSpeaking();
   }
-  if (view !== 'deck') query = '';
+  if (view !== 'deck') {
+    query = '';
+    filtersDeck = null;
+  }
   tip.hidden = true;
   if (view === 'deck' && deck) renderDeck(deck);
   else if (view === 'study' && deck) renderStudy(deck);
