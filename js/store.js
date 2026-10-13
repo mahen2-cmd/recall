@@ -271,6 +271,15 @@ export function pullFromReserve(deckId, n = Infinity) {
   return pulled.length;
 }
 
+/** Delete several cards at once. Returns how many were deleted. */
+export function deleteCards(ids) {
+  const doomed = new Set(ids);
+  const before = state.cards.length;
+  state.cards = state.cards.filter((c) => !doomed.has(c.id));
+  if (state.cards.length !== before) save();
+  return before - state.cards.length;
+}
+
 /** The group a card is listed under: 'reserve', 'new', 'learning', 'due' or 'later'. */
 export function cardGroup(c, now = Date.now()) {
   if (c.reserved) return 'reserve';

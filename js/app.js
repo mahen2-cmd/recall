@@ -13,6 +13,8 @@ let query = '';
 const NO_FILTERS = { groups: [], due: 'any', added: 'any', lapses: 'any', sort: 'newest' };
 let filters = { ...NO_FILTERS };
 let filtersDeck = null;
+// Ids of the cards ticked in that list. Only cards on screen stay selected.
+let selected = new Set();
 
 const CARD_GROUPS = [
   ['new', 'New'],
@@ -420,6 +422,20 @@ async function removeDeck(deck) {
   store.deleteDeck(deck.id);
   if (location.hash !== '#/') location.hash = '#/';
   else render();
+}
+
+async function removeCards(ids) {
+  const one = ids.length === 1;
+  const ok = await confirmDialog({
+    title: `Delete ${plural(ids.length, 'card')}?`,
+    message: `${one ? 'This card and its' : 'These cards and their'} review history will be permanently deleted.`,
+    confirmLabel: `Delete ${plural(ids.length, 'card')}`,
+  });
+  if (!ok) return;
+  const deleted = store.deleteCards(ids);
+  selected = new Set();
+  toast(`${plural(deleted, 'card')} deleted`);
+  render();
 }
 
 async function removeCard(card) {
@@ -853,6 +869,7 @@ function renderDeck(deck) {
   if (filtersDeck !== deck.id) {
     filters = { ...NO_FILTERS };
     filtersDeck = deck.id;
+    selected = new Set();
   }
   const filtering = Object.keys(NO_FILTERS).some((key) => key !== 'sort' && String(filters[key]) !== String(NO_FILTERS[key]));
   const setFilters = (patch) => {
@@ -906,6 +923,11 @@ function renderDeck(deck) {
     const q = query.trim();
     const matches = store.findCards(deck.id, { text: q, ...filters }, now);
     shown.textContent = q || filtering ? `${matches.length.toLocaleString()} of ${plural(cards.length, 'card')}` : plural(cards.length, 'card');
+    selected = new Set(matches.filter((card) => selected.has(card.id)).map((card) => card.id));
+    const pick = (ids, on) => {
+      for (const id of ids) on ? selected.add(id) : selected.delete(id);
+      drawList();
+    };
     if (!matches.length) {
       const message = q && !filtering ? `No cards match “${q}”.` : q ? `No cards match “${q}” with these filters.` : 'No cards match these filters.';
       list.replaceChildren(h('div', { class: 'card-list' }, h('div', { class: 'list-empty' }, message)));
@@ -915,11 +937,35 @@ function renderDeck(deck) {
       h(
         'div',
         { class: 'card-list' },
+        h(
+          'div',
+          { class: 'select-bar' },
+          h(
+            'label',
+            { class: 'pick' },
+            h('input', {
+              type: 'checkbox',
+              checked: selected.size === matches.length,
+              indeterminate: selected.size > 0 && selected.size < matches.length,
+              onchange: (e) => pick(matches.map((card) => card.id), e.target.checked),
+            }),
+            selected.size ? `${selected.size.toLocaleString()} selected` : matches.length === cards.length ? 'Select all' : `Select all ${matches.length.toLocaleString()} shown`,
+          ),
+          selected.size > 0 && [
+            h('button', { class: 'btn danger', type: 'button', onclick: () => removeCards([...selected]) }, icon('trash'), `Delete ${plural(selected.size, 'card')}`),
+            h('button', { class: 'btn ghost', type: 'button', onclick: () => pick([...selected], false) }, 'Cancel'),
+          ],
+        ),
         matches.map((card) => {
           const status = cardStatus(card, now);
           return h(
             'div',
-            { class: 'card-row', onclick: () => openCardDialog({ card }) },
+            { class: `card-row ${selected.has(card.id) ? 'selected' : ''}`, onclick: () => openCardDialog({ card }) },
+            h(
+              'label',
+              { class: 'pick', onclick: (e) => e.stopPropagation() },
+              h('input', { type: 'checkbox', 'aria-label': 'Select card', checked: selected.has(card.id), onchange: (e) => pick([card.id], e.target.checked) }),
+            ),
             h('div', { class: 'text' }, card.front),
             h('div', { class: 'text back-text' }, card.back),
             h('span', { class: `pill ${status.kind} due`, style: 'justify-self: start' }, status.label),

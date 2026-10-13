@@ -207,6 +207,14 @@ test('findCards filters by group, text, dates and lapses, and sorts', () => {
   assert.equal(ids({ sort: 'lapses' }, dueDay)[0], review.id);
 });
 
+test('deleteCards removes only the cards named', () => {
+  const deck = setup();
+  const [a, b, c] = ['a', 'b', 'c'].map((text, i) => store.addCard(deck.id, text, text, T0 + i));
+  assert.equal(store.deleteCards([a.id, c.id, 'no-such-card']), 2);
+  assert.deepEqual(store.cardsIn(deck.id).map((card) => card.id), [b.id]);
+  assert.equal(store.deleteCards([]), 0);
+});
+
 test('export and import round-trip', () => {
   const deck = setup();
   store.addCard(deck.id, 'q', 'a', T0);
