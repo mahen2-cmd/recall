@@ -285,7 +285,7 @@ test('importing into Recall adds decks once and makes the cards due as in Anki',
   assert.equal(deck.name, 'Languages::Portuguese');
   assert.equal(deck.newPerDay, 15);
   // One overdue review, two cards in learning steps and three new cards.
-  assert.deepEqual(store.counts(deck.id, NOW), { new: 3, learning: 2, review: 1, total: 6, cards: 8 });
+  assert.deepEqual(store.counts(deck.id, NOW), { new: 3, learning: 2, review: 1, total: 6, cards: 8, reserve: 0 });
   assert.equal(store.counts(deck.id, NOW + 3 * DAY).review, 2);
   assert.equal(store.nextCard(deck.id, NOW).front, 'Late');
 

@@ -13,6 +13,8 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 - **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
+- **A reserve.** Keep cards aside in a deck, out of study, and pull in as many as you like when you are ready for them. Fill it from a CSV or Excel file.
+- **Statistics.** A forecast of upcoming reviews, a year-long activity calendar, how many cards are new, learning, young and mature, and how often you press each answer button.
 - **Read aloud.** A speaker button on each side of a card, a language for each side, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
 - **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day.
 - **Keyboard-first studying**, light and dark themes, and a layout that works on a phone.
@@ -75,6 +77,26 @@ Each deck has its own:
 - **Auto-play audio**: off, front, back or both sides.
 - **Front language** and **Back language** (default English (US) and Portuguese): the language each side is read in.
 - **Speaking speed**, from normal down to very slow.
+
+## The reserve
+
+Each deck has a reserve: cards that are kept in the deck but out of study, so they are not counted as new cards and never come up, until you pull them in.
+
+- **Add to it** with **Import to reserve** on the deck's page, which takes a CSV or Excel file with one column for the front and one for the back. The ordinary import and the card editor also have a reserve checkbox.
+- **Pull from it** by typing how many cards you want and pressing **Pull in**, or take everything with **Pull all**. Cards come out oldest first, which for an imported file is the order of its rows.
+
+Pulled cards become ordinary new cards, so they are introduced at the deck's new cards per day; raise that setting to study more of them at once. A card that has already been studied cannot go back on reserve.
+
+## Statistics
+
+The chart button in the top bar opens the statistics for all decks; the one on a deck's page opens that deck's. Choose a period of 1 month, 3 months or 1 year.
+
+- **Forecast.** The reviews already scheduled for each coming day (or week, or 30 days, for the longer periods). Today's bar includes anything overdue. New cards are not counted.
+- **Activity.** A calendar of the past year, darker on days with more reviews.
+- **Cards.** How many are new, learning, young (in review with an interval under 21 days) and mature (21 days or more), as in Anki.
+- **Answer buttons.** How often you pressed Again, Hard, Good and Easy on learning, young and mature cards. **Retention** is the share of young and mature reviews that were not answered Again.
+
+Recall records which button was pressed, and in which deck, from the version that added this page. Reviews done before that still count towards the activity calendar and the streak for all decks, but have no per-deck or per-button breakdown.
 
 ## Importing from Excel
 

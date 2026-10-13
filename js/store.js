@@ -1,6 +1,6 @@
 // App state: decks, cards, persistence and the study queue.
 
-import { State, dayStart, newSchedule, nextDayAt, preview, schedule } from './fsrs.js';
+import { DAY, State, dayStart, newSchedule, nextDayAt, preview, schedule } from './fsrs.js';
 
 const KEY = 'recall.v1';
 
@@ -25,7 +25,9 @@ export const DECK_DEFAULTS = {
   speechRate: 0.8,
 };
 
-const emptyState = () => ({ version: 1, decks: [], cards: [], daily: {}, settings: {} });
+// `daily` counts the answers given on each day. `log` breaks the same answers down:
+// log[day][deckId] holds twelve counts, Again to Easy for each kind in ANSWER_KINDS.
+const emptyState = () => ({ version: 1, decks: [], cards: [], daily: {}, log: {}, settings: {} });
 
 const memory = new Map();
 const storage = (() => {
@@ -151,6 +153,7 @@ function normalize(data) {
     ...emptyState(),
     savedAt: data.savedAt ?? 0,
     daily: data.daily ?? {},
+    log: data.log ?? {},
     settings: data.settings ?? {},
     decks,
     cards,
@@ -162,7 +165,7 @@ const uid = () =>
   Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 
 // Days roll over at 4am, as in Anki.
-function dayKey(t) {
+export function dayKey(t) {
   const d = new Date(dayStart(t));
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -205,19 +208,22 @@ export function deleteDeck(id) {
 export const card = (id) => state.cards.find((c) => c.id === id);
 export const cardsIn = (deckId) => state.cards.filter((c) => c.deckId === deckId);
 
-export function addCard(deckId, front, back, now = Date.now()) {
-  const c = { id: uid(), deckId, front, back, created: now, updated: now, ...newSchedule(now) };
+// A card on reserve (`reserved: true`) is kept out of study until it is pulled in.
+const reserveFlag = (reserved) => (reserved ? { reserved: true } : {});
+
+export function addCard(deckId, front, back, now = Date.now(), { reserved = false } = {}) {
+  const c = { id: uid(), deckId, front, back, created: now, updated: now, ...newSchedule(now), ...reserveFlag(reserved) };
   state.cards.push(c);
   save();
   return c;
 }
 
 /** Add many cards at once from `[front, back]` pairs. Returns how many were added. */
-export function addCards(deckId, pairs, now = Date.now()) {
+export function addCards(deckId, pairs, now = Date.now(), { reserved = false } = {}) {
   pairs.forEach(([front, back], i) => {
     // Stagger creation times so the cards keep the order they had in the file.
     const created = now + i;
-    state.cards.push({ id: uid(), deckId, front, back, created, updated: created, ...newSchedule(now) });
+    state.cards.push({ id: uid(), deckId, front, back, created, updated: created, ...newSchedule(now), ...reserveFlag(reserved) });
   });
   save();
   return pairs.length;
@@ -254,6 +260,17 @@ export function updateCard(id, patch) {
   save();
 }
 
+/** A deck's reserve, oldest first: the order cards are pulled in. */
+export const reserveIn = (deckId) => cardsIn(deckId).filter((c) => c.reserved).sort((a, b) => a.created - b.created);
+
+/** Move up to `n` cards from a deck's reserve in with its new cards. Returns how many moved. */
+export function pullFromReserve(deckId, n = Infinity) {
+  const pulled = reserveIn(deckId).slice(0, Math.max(0, n));
+  for (const c of pulled) delete c.reserved;
+  if (pulled.length) save();
+  return pulled.length;
+}
+
 export function deleteCard(id) {
   state.cards = state.cards.filter((c) => c.id !== id);
   save();
@@ -266,7 +283,7 @@ const isLearning = (c) => c.state === State.Learning || c.state === State.Relear
 function queue(deckId, now) {
   const d = deck(deckId);
   const today = dayStart(now);
-  const all = cardsIn(deckId);
+  const all = cardsIn(deckId).filter((c) => !c.reserved);
   const introduced = all.filter((c) => c.introduced >= today).length;
   const allowance = Math.max(0, d.newPerDay - introduced);
   return {
@@ -282,11 +299,12 @@ function queue(deckId, now) {
   };
 }
 
-/** How many cards are waiting in a deck today, by kind. */
+/** How many cards are waiting in a deck today, by kind, and how many it holds in all and on reserve. */
 export function counts(deckId, now = Date.now()) {
   const q = queue(deckId, now);
   const n = { new: q.fresh.length, learning: q.learning.length, review: q.review.length };
-  return { ...n, total: n.new + n.learning + n.review, cards: cardsIn(deckId).length };
+  const all = cardsIn(deckId);
+  return { ...n, total: n.new + n.learning + n.review, cards: all.length, reserve: all.filter((c) => c.reserved).length };
 }
 
 /** The next card to study, or `undefined` when the deck is done for today. */
@@ -320,24 +338,89 @@ export function answerCard(id, rating, now = Date.now()) {
   const c = card(id);
   const next = schedule(c, rating, now, schedulingOptions(c));
   if (c.state === State.New) c.introduced = now;
+  const kind = c.state !== State.Review ? 0 : c.scheduledDays < MATURE_DAYS ? 1 : 2;
   Object.assign(c, next);
   const key = dayKey(now);
   state.daily[key] = (state.daily[key] ?? 0) + 1;
+  const answers = ((state.log[key] ??= {})[c.deckId] ??= Array(12).fill(0));
+  answers[kind * 4 + rating - 1]++;
   save();
 }
 
 // ---- Stats and backup -----------------------------------------------------
 
-export function stats(now = Date.now()) {
-  const reviewedToday = state.daily[dayKey(now)] ?? 0;
+// A review card is mature once its interval reaches three weeks, as in Anki.
+const MATURE_DAYS = 21;
+
+/** The kinds of card an answer is logged under, in the order `statistics` reports them. */
+export const ANSWER_KINDS = ['Learning', 'Young', 'Mature'];
+
+function streakOf(perDay, now) {
+  const reviewedToday = perDay[dayKey(now)] ?? 0;
   let streak = 0;
   const day = new Date(dayStart(now));
   if (!reviewedToday) day.setDate(day.getDate() - 1);
-  while (state.daily[dayKey(day)] > 0) {
+  while (perDay[dayKey(day)] > 0) {
     streak++;
     day.setDate(day.getDate() - 1);
   }
   return { reviewedToday, streak };
+}
+
+export const stats = (now = Date.now()) => streakOf(state.daily, now);
+
+/**
+ * Figures for the statistics page, for one deck or, without `deckId`, for all of them.
+ *   cards      how many cards are new, learning, young and mature, leaving out the reserve
+ *   perDay     answers given on each day, keyed like '2026-01-31'
+ *   forecast   cards coming due on each of the next `days` days; today includes overdue ones
+ *   answers    Again, Hard, Good and Easy counts over the last `days` days, per ANSWER_KINDS
+ *   loggedFrom the first day `answers` has data for, or null
+ *   partial    whether answers were given before `loggedFrom`, which `answers` (and a
+ *              single deck's `perDay`) cannot include
+ */
+export function statistics(deckId, days = 30, now = Date.now()) {
+  const today = dayStart(now);
+  const mine = (deckId ? cardsIn(deckId) : state.cards).filter((c) => !c.reserved);
+
+  const cards = { new: 0, learning: 0, young: 0, mature: 0 };
+  const forecast = Array(days).fill(0);
+  for (const c of mine) {
+    if (c.state === State.New) {
+      cards.new++;
+      continue;
+    }
+    if (isLearning(c)) cards.learning++;
+    else if (c.scheduledDays < MATURE_DAYS) cards.young++;
+    else cards.mature++;
+    const offset = Math.max(0, Math.round((dayStart(c.due) - today) / DAY));
+    if (offset < days) forecast[offset]++;
+  }
+
+  const first = new Date(today);
+  first.setDate(first.getDate() - (days - 1));
+  const from = dayKey(first);
+  const answers = ANSWER_KINDS.map(() => [0, 0, 0, 0]);
+  const logged = {};
+  for (const [key, byDeck] of Object.entries(state.log)) {
+    for (const [id, row] of Object.entries(byDeck)) {
+      if (deckId && id !== deckId) continue;
+      logged[key] = (logged[key] ?? 0) + row.reduce((sum, n) => sum + n, 0);
+      if (key >= from) row.forEach((n, i) => (answers[Math.floor(i / 4)][i % 4] += n));
+    }
+  }
+  const loggedFrom = Object.keys(logged).sort()[0] ?? null;
+  const perDay = deckId ? logged : state.daily;
+
+  return {
+    cards,
+    perDay,
+    ...streakOf(perDay, now),
+    forecast,
+    answers,
+    loggedFrom,
+    partial: Object.keys(state.daily).some((key) => !loggedFrom || key < loggedFrom),
+  };
 }
 
 export const exportData = () => JSON.stringify(state, null, 2);

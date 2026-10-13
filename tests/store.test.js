@@ -94,6 +94,78 @@ test('stats track reviews today and the streak', () => {
   assert.deepEqual(store.stats(T0 + 3 * DAY), { reviewedToday: 0, streak: 0 });
 });
 
+test('statistics count cards, the forecast and answers by kind', () => {
+  const deck = setup();
+  const other = store.createDeck({ name: 'Other' });
+  const a = store.addCard(deck.id, 'a', 'a', T0);
+  const b = store.addCard(deck.id, 'b', 'b', T0 + 1);
+  store.addCard(deck.id, 'c', 'c', T0 + 2);
+  const d = store.addCard(other.id, 'd', 'd', T0 + 3);
+
+  store.answerCard(a.id, Rating.Easy, T0); // graduates, due in 4 days
+  store.answerCard(b.id, Rating.Again, T0); // stays in learning
+  store.answerCard(d.id, Rating.Easy, T0);
+
+  const s = store.statistics(deck.id, 30, T0);
+  assert.deepEqual(s.cards, { new: 1, learning: 1, young: 1, mature: 0 });
+  assert.equal(s.forecast[0], 1);
+  assert.equal(s.forecast[store.card(a.id).scheduledDays], 1);
+  assert.equal(s.forecast.reduce((sum, n) => sum + n, 0), 2);
+  assert.deepEqual(s.answers, [[1, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]]);
+  assert.equal(s.reviewedToday, 2);
+  assert.equal(s.loggedFrom, store.dayKey(T0));
+  assert.equal(s.partial, false);
+  assert.equal(store.statistics(null, 30, T0).reviewedToday, 3);
+
+  // On its due day the card is answered as a young review; overdue cards count as due today.
+  const due = store.card(a.id).due;
+  assert.equal(store.statistics(deck.id, 30, due + 3 * DAY).forecast[0], 2);
+  store.answerCard(a.id, Rating.Hard, due);
+  assert.deepEqual(store.statistics(deck.id, 30, due).answers[1], [0, 1, 0, 0]);
+  // The first day's answers have fallen out of a two-day window.
+  assert.deepEqual(store.statistics(deck.id, 2, due).answers[0], [0, 0, 0, 0]);
+});
+
+test('statistics say when earlier reviews have no breakdown', () => {
+  const deck = setup();
+  const card = store.addCard(deck.id, 'q', 'a', T0);
+  store.answerCard(card.id, Rating.Good, T0);
+  const old = JSON.parse(store.exportData());
+  delete old.log;
+  store.importData(JSON.stringify(old));
+  const s = store.statistics(null, 30, T0);
+  assert.equal(s.reviewedToday, 1);
+  assert.equal(s.loggedFrom, null);
+  assert.equal(s.partial, true);
+});
+
+test('reserve cards stay out of study until they are pulled', () => {
+  const deck = setup();
+  store.addCard(deck.id, 'now', '-', T0);
+  store.addCards(deck.id, [['r1', '-'], ['r2', '-'], ['r3', '-']], T0 + 1, { reserved: true });
+  store.addCard(deck.id, 'r4', '-', T0 + 10, { reserved: true });
+
+  assert.deepEqual(store.reserveIn(deck.id).map((c) => c.front), ['r1', 'r2', 'r3', 'r4']);
+  let c = store.counts(deck.id, T0);
+  assert.deepEqual([c.new, c.cards, c.reserve], [1, 5, 4]);
+  assert.equal(store.statistics(deck.id, 30, T0).cards.new, 1);
+
+  assert.equal(store.pullFromReserve(deck.id, 2), 2);
+  c = store.counts(deck.id, T0);
+  assert.deepEqual([c.new, c.reserve], [3, 2]);
+  assert.deepEqual(store.reserveIn(deck.id).map((c) => c.front), ['r3', 'r4']);
+
+  // Asking for more than there is pulls what is left.
+  assert.equal(store.pullFromReserve(deck.id, 10), 2);
+  assert.equal(store.pullFromReserve(deck.id), 0);
+  assert.equal(store.counts(deck.id, T0).new, 5);
+
+  // The reserve survives a backup.
+  store.updateCard(store.cardsIn(deck.id)[0].id, { reserved: true });
+  store.importData(store.exportData());
+  assert.equal(store.counts(deck.id, T0).reserve, 1);
+});
+
 test('export and import round-trip', () => {
   const deck = setup();
   store.addCard(deck.id, 'q', 'a', T0);

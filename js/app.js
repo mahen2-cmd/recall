@@ -1,4 +1,4 @@
-import { DAY, MINUTE, Rating, State } from './fsrs.js';
+import { DAY, MINUTE, Rating, State, dayStart } from './fsrs.js';
 import { ankiCollection, parseSpreadsheet } from './importer.js';
 import * as store from './store.js';
 
@@ -41,6 +41,8 @@ const ICONS = {
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.5"/>',
   speaker: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   play: '<path d="M7 5l12 7-12 7V5z"/>',
+  chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
+  box: '<path d="M4 8h16v11H4zM3 5h18v3H3zM10 12h4"/>',
 };
 
 function icon(name) {
@@ -52,7 +54,7 @@ function icon(name) {
 const iconButton = (name, label, onclick, extra = '') =>
   h('button', { class: `icon-btn ${extra}`, type: 'button', title: label, 'aria-label': label, onclick }, icon(name));
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
 
 function toast(message) {
   const el = h('div', { class: 'toast' }, message);
@@ -71,6 +73,7 @@ function formatInterval(ms) {
 }
 
 function cardStatus(card, now) {
+  if (card.reserved) return { kind: 'zero', label: 'On reserve' };
   if (card.state === State.New) return { kind: 'new', label: 'New' };
   if (card.state !== State.Review) return { kind: 'learning', label: 'Learning' };
   const days = Math.round((new Date(card.due).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / DAY);
@@ -334,6 +337,9 @@ function openCardDialog({ card, deckId }) {
     null,
     store.decks().map((d) => h('option', { value: d.id, selected: d.id === (card?.deckId ?? deckId) }, d.name)),
   );
+  // Only a card that has never been studied can wait on the reserve.
+  const reserved = h('input', { type: 'checkbox', checked: Boolean(card?.reserved) });
+  const canReserve = !card || card.state === State.New;
   const note = h('span', { class: 'note' }, 'Ctrl + Enter to save');
 
   const submitOnCtrlEnter = (e) => {
@@ -354,15 +360,15 @@ function openCardDialog({ card, deckId }) {
         if (!values.front) return front.focus();
         if (!values.back) return back.focus();
         if (card) {
-          store.updateCard(card.id, { ...values, deckId: deckSelect.value });
+          store.updateCard(card.id, { ...values, deckId: deckSelect.value, reserved: (canReserve && reserved.checked) || undefined });
           prepareCardSpeech(store.card(card.id));
           dialog.close();
           return;
         }
         // Stay open so several cards can be added in a row.
-        prepareCardSpeech(store.addCard(deckSelect.value, values.front, values.back));
+        prepareCardSpeech(store.addCard(deckSelect.value, values.front, values.back, Date.now(), { reserved: reserved.checked }));
         front.value = back.value = '';
-        note.textContent = 'Card added';
+        note.textContent = reserved.checked ? 'Card added to the reserve' : 'Card added';
         note.className = 'note ok';
         front.focus();
         render();
@@ -371,6 +377,7 @@ function openCardDialog({ card, deckId }) {
     h('label', { class: 'field' }, h('span', null, 'Front'), front),
     h('label', { class: 'field' }, h('span', null, 'Back'), back),
     h('label', { class: 'field' }, h('span', null, 'Deck'), deckSelect),
+    canReserve && h('label', { class: 'check' }, reserved, 'Keep on reserve, out of study until pulled in'),
     h(
       'div',
       { class: 'modal-foot' },
@@ -428,7 +435,7 @@ function planImport(rows, { front, back, header, skipExisting, existing }) {
   return plan;
 }
 
-function pickImportFile(deck) {
+function pickImportFile(deck, toReserve = false) {
   const input = h('input', {
     type: 'file',
     accept: '.xlsx,.csv,.tsv,.txt',
@@ -438,7 +445,7 @@ function pickImportFile(deck) {
       try {
         const rows = await parseSpreadsheet(await file.arrayBuffer(), file.name);
         if (!rows.length) throw new Error('That file has no rows to import.');
-        openImportDialog(deck, file.name, rows);
+        openImportDialog(deck, file.name, rows, toReserve);
       } catch (error) {
         toast(error.message || 'Could not read that file.');
       }
@@ -447,7 +454,7 @@ function pickImportFile(deck) {
   input.click();
 }
 
-function openImportDialog(deck, fileName, rows) {
+function openImportDialog(deck, fileName, rows, toReserve = false) {
   const width = Math.max(...rows.map((row) => row.length));
   const existing = store.cardsIn(deck.id).map((card) => cardKey(card.front));
   const columnSelect = (selected) =>
@@ -464,6 +471,7 @@ function openImportDialog(deck, fileName, rows) {
   const back = columnSelect(Math.min(1, width - 1));
   const header = h('input', { type: 'checkbox', onchange: () => update() });
   const skipExisting = h('input', { type: 'checkbox', checked: true, onchange: () => update() });
+  const reserved = h('input', { type: 'checkbox', checked: toReserve });
   const preview = h('div', { class: 'import-preview' });
   const summary = h('p', { class: 'import-summary' });
   const submit = h('button', { class: 'btn primary', type: 'submit' });
@@ -508,9 +516,9 @@ function openImportDialog(deck, fileName, rows) {
         e.preventDefault();
         const { cards } = plan();
         if (!cards.length) return;
-        store.addCards(deck.id, cards);
+        store.addCards(deck.id, cards, Date.now(), { reserved: reserved.checked });
         dialog.close();
-        toast(`Imported ${plural(cards.length, 'card')} into ${deck.name}`);
+        toast(`Imported ${plural(cards.length, 'card')} into ${reserved.checked ? `the reserve of ${deck.name}` : deck.name}`);
       },
     },
     h('p', { class: 'message', style: 'margin-bottom: 16px' }, `${fileName}: ${plural(rows.length, 'row')}${width > 26 ? '' : `, ${plural(width, 'column')}`}`),
@@ -522,6 +530,7 @@ function openImportDialog(deck, fileName, rows) {
     ),
     h('label', { class: 'check' }, header, 'The first row is a header, skip it'),
     h('label', { class: 'check' }, skipExisting, 'Skip cards already in this deck'),
+    h('label', { class: 'check' }, reserved, 'Put these cards on reserve, to pull in when you want them'),
     preview,
     summary,
     h(
@@ -698,6 +707,7 @@ function topbar() {
     { class: 'topbar' },
     h('a', { class: 'brand', href: '#/' }, h('span', { class: 'brand-mark' }), 'Recall'),
     storageChip(),
+    h('a', { class: 'icon-btn', href: '#/stats', title: 'Statistics', 'aria-label': 'Statistics' }, icon('chart')),
     iconButton('upload', 'Import backup', importBackup),
     iconButton('download', 'Export backup', exportBackup),
     iconButton(dark ? 'sun' : 'moon', dark ? 'Light theme' : 'Dark theme', toggleTheme),
@@ -719,7 +729,7 @@ function renderHome() {
         'a',
         { class: 'deck-main', href: `#/deck/${deck.id}` },
         h('div', { class: 'deck-name' }, deck.name),
-        h('div', { class: 'deck-meta' }, plural(c.cards, 'card')),
+        h('div', { class: 'deck-meta' }, plural(c.cards, 'card') + (c.reserve ? `, ${c.reserve.toLocaleString()} on reserve` : '')),
         countPills(c),
       ),
       h(
@@ -788,6 +798,35 @@ function renderHome() {
   );
 }
 
+/** A deck's reserve: how many cards are waiting, and the controls to pull some in. */
+function reserveBar(deck, n) {
+  const pull = (count) => {
+    const pulled = store.pullFromReserve(deck.id, count);
+    toast(`${plural(pulled, 'card')} pulled in as new ${pulled === 1 ? 'card' : 'cards'}`);
+    render();
+  };
+  const amount = h('input', { type: 'number', required: true, min: 1, max: n, step: 1, value: Math.min(n, 10), 'aria-label': 'How many cards to pull in' });
+  return h(
+    'form',
+    {
+      class: 'reserve',
+      onsubmit: (e) => {
+        e.preventDefault();
+        pull(Number(amount.value));
+      },
+    },
+    icon('box'),
+    h(
+      'div',
+      { class: 'reserve-text' },
+      h('b', null, n ? `${plural(n, 'card')} on reserve` : 'Nothing on reserve'),
+      h('span', null, n ? 'Kept out of study until you pull them in, oldest first.' : 'Cards on reserve are kept out of study until you pull them in.'),
+    ),
+    n > 0 && [amount, h('button', { class: 'btn primary', type: 'submit' }, 'Pull in'), n > 1 && h('button', { class: 'btn', type: 'button', onclick: () => pull(n) }, `Pull all ${n.toLocaleString()}`)],
+    h('button', { class: 'btn', type: 'button', title: 'Import cards from a CSV or Excel file straight into the reserve', onclick: () => pickImportFile(deck, true) }, icon('upload'), 'Import to reserve'),
+  );
+}
+
 function renderDeck(deck) {
   const now = Date.now();
   const c = store.counts(deck.id, now);
@@ -840,7 +879,7 @@ function renderDeck(deck) {
   });
 
   const content = cards.length
-    ? [h('div', { class: 'toolbar' }, h('div', { class: 'search' }, icon('search'), search), shown), list]
+    ? [reserveBar(deck, c.reserve), h('div', { class: 'toolbar' }, h('div', { class: 'search' }, icon('search'), search), shown), list]
     : h(
         'div',
         { class: 'empty' },
@@ -868,6 +907,7 @@ function renderDeck(deck) {
         h(
           'div',
           { class: 'actions' },
+          h('a', { class: 'icon-btn', href: `#/stats/${deck.id}`, title: 'Deck statistics', 'aria-label': 'Deck statistics' }, icon('chart')),
           iconButton('edit', 'Deck settings', () => openDeckDialog(deck)),
           iconButton('trash', 'Delete deck', () => removeDeck(deck), 'danger'),
           h('button', { class: 'btn', type: 'button', title: 'Import cards from an Excel or CSV file', onclick: () => pickImportFile(deck) }, icon('upload'), 'Import'),
@@ -889,7 +929,7 @@ const RATINGS = [
 
 function currentStudyCard(deckId, now) {
   let card = session.cardId && store.card(session.cardId);
-  if (!card || card.deckId !== deckId) {
+  if (!card || card.deckId !== deckId || card.reserved) {
     card = store.nextCard(deckId, now);
     session.cardId = card?.id ?? null;
     session.revealed = false;
@@ -1011,6 +1051,341 @@ function renderStudy(deck) {
   );
 }
 
+// ---- Statistics -----------------------------------------------------------
+
+// `bin` is how many days each bar of the forecast covers.
+const RANGES = [
+  { days: 30, bin: 1, label: '1 month', span: 'month' },
+  { days: 91, bin: 7, label: '3 months', span: '3 months' },
+  { days: 360, bin: 30, label: '1 year', span: 'year' },
+];
+let statsRange = RANGES[0];
+
+const shortDate = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' });
+const longDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const monthName = new Intl.DateTimeFormat(undefined, { month: 'short' });
+
+const sum = (list) => list.reduce((total, n) => total + n, 0);
+const percent = (part, whole) => `${Math.round((part / whole) * 100)}%`;
+
+function addDays(t, n) {
+  const d = new Date(t);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+/** A day key such as '2026-01-31', written out. */
+const sinceDate = (key) => longDate.format(new Date(`${key}T12:00`));
+
+// One tooltip shared by every chart.
+const tip = h('div', { class: 'chart-tip', hidden: true });
+let tipTimer = null;
+document.body.append(tip);
+
+/** Show `value` and `label` beside the pointer while it is over `el`. */
+function withTip(el, value, label) {
+  const show = (e) => {
+    clearTimeout(tipTimer);
+    tip.replaceChildren(h('b', null, value), h('span', null, label));
+    tip.hidden = false;
+    const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+    const y = e.clientY - tip.offsetHeight - 12;
+    tip.style.left = `${Math.max(8, x)}px`;
+    tip.style.top = `${y < 8 ? e.clientY + 18 : y}px`;
+  };
+  const hide = () => (tip.hidden = true);
+  el.addEventListener('pointerdown', show);
+  el.addEventListener('pointermove', show);
+  // A finger leaves as soon as it lifts, so keep the tooltip up long enough to read.
+  el.addEventListener('pointerleave', (e) => (e.pointerType === 'mouse' ? hide() : (tipTimer = setTimeout(hide, 1800))));
+  return el;
+}
+
+/** The same figures as a chart, for screen readers. */
+const dataTable = (caption, head, rows) =>
+  h(
+    'table',
+    { class: 'sr-only' },
+    h('caption', null, caption),
+    h('thead', null, h('tr', null, head.map((text) => h('th', { scope: 'col' }, text)))),
+    h('tbody', null, rows.map((row) => h('tr', null, row.map((text) => h('td', null, String(text)))))),
+  );
+
+const panel = (title, sub, ...content) =>
+  h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h2', null, title), sub && h('p', null, sub)), content);
+
+/** A round number at or above `max` for the top of an axis, and the step between its ticks. */
+function axisTop(max) {
+  const rough = Math.max(max, 4) / 4;
+  const unit = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 5, 10].map((m) => m * unit).find((size) => size >= rough);
+  return { step, top: Math.ceil(Math.max(max, 4) / step) * step };
+}
+
+/** Vertical bars from `[{ value, label, tick }]`; `tick` is the text under a bar, if any. */
+function columnChart(items, unit) {
+  const { step, top } = axisTop(Math.max(...items.map((item) => item.value)));
+  const ticks = Array.from({ length: top / step + 1 }, (_, i) => i * step);
+  return h(
+    'div',
+    { class: 'chart', 'aria-hidden': 'true' },
+    h(
+      'div',
+      { class: 'chart-plot' },
+      ticks.map((t) => h('div', { class: 'chart-tick', style: `bottom: ${(t / top) * 100}%` }, h('span', null, t >= 1000 ? `${+(t / 1000).toFixed(1)}K` : String(t)))),
+      h(
+        'div',
+        { class: 'chart-cols' },
+        items.map((item) =>
+          withTip(
+            h('div', { class: 'chart-col' }, item.value > 0 && h('div', { class: 'chart-bar', style: `height: ${(item.value / top) * 100}%` })),
+            plural(item.value, unit),
+            item.label,
+          ),
+        ),
+      ),
+    ),
+    h('div', { class: 'chart-x' }, items.map((item) => h('span', null, item.tick ?? ''))),
+  );
+}
+
+function forecastPanel(s, today) {
+  const { days, bin, span } = statsRange;
+  const every = { 1: 7, 7: 4, 30: 3 }[bin];
+  const items = [];
+  for (let i = 0; i < days; i += bin) {
+    const from = addDays(today, i);
+    const label =
+      bin > 1
+        ? `${shortDate.format(from)} to ${shortDate.format(addDays(today, i + bin - 1))}`
+        : i === 0
+          ? 'Today, with anything overdue'
+          : longDate.format(from);
+    const tick = (i / bin) % every ? null : i === 0 && bin === 1 ? 'Today' : shortDate.format(from);
+    items.push({ value: sum(s.forecast.slice(i, i + bin)), label, tick });
+  }
+  const total = sum(s.forecast);
+  const sub = total
+    ? `${plural(total, 'review')} scheduled over the next ${span}, about ${+(total / days).toFixed(1)} a day.`
+    : `No reviews are scheduled over the next ${span}.`;
+  return panel(
+    'Forecast',
+    sub,
+    columnChart(items, 'review'),
+    dataTable('Reviews coming due', ['When', 'Reviews'], items.map((item) => [item.label, item.value])),
+  );
+}
+
+/** A year of days as a grid of weeks, shaded by how many cards were answered. */
+function activityPanel(s, today, deck) {
+  const WEEKS = 53;
+  const start = addDays(today, -((WEEKS - 1) * 7 + ((new Date(today).getDay() + 6) % 7))); // a Monday
+  const days = [];
+  for (let d = start; d <= today; d = addDays(d, 1)) days.push({ date: d, n: s.perDay[store.dayKey(d)] ?? 0 });
+  const max = Math.max(...days.map((day) => day.n));
+  const active = days.filter((day) => day.n);
+
+  const months = [];
+  for (let week = 0; week < WEEKS; week++) {
+    const monday = addDays(start, week * 7);
+    if (week === 0 || monday.getMonth() !== addDays(monday, -7).getMonth()) months.push({ week, name: monthName.format(monday) });
+  }
+  // The first month is often a sliver; drop its name when the next would run into it.
+  if (months[1]?.week < 3) months.shift();
+
+  const scroller = h(
+    'div',
+    { class: 'heat-scroll' },
+    h('div', { class: 'heat-months' }, months.map(({ week, name }) => h('span', { style: `grid-column: ${week + 1}` }, name))),
+    h(
+      'div',
+      { class: 'heat-grid' },
+      days.map(({ date, n }) =>
+        withTip(h('i', { class: `heat l${n ? Math.ceil((4 * n) / max) : 0}` }), n ? plural(n, 'review') : 'No reviews', longDate.format(date)),
+      ),
+    ),
+  );
+  const sub = active.length
+    ? `${plural(sum(active.map((day) => day.n)), 'review')} on ${plural(active.length, 'day')} in the past year.`
+    : 'No reviews in the past year.';
+  const section = panel(
+    'Activity',
+    sub,
+    h(
+      'div',
+      { class: 'heatmap', role: 'img', 'aria-label': `Calendar of reviews per day. ${sub}` },
+      h('div', { class: 'heat-days', 'aria-hidden': 'true' }, ['Mon', '', 'Wed', '', 'Fri', '', ''].map((day) => h('span', null, day))),
+      scroller,
+    ),
+    h(
+      'div',
+      { class: 'heat-key', 'aria-hidden': 'true' },
+      'Less',
+      [0, 1, 2, 3, 4].map((level) => h('i', { class: `heat l${level}` })),
+      'More',
+    ),
+    deck && s.partial && h('p', { class: 'panel-note' }, `Reviews are counted for each deck separately ${s.loggedFrom ? `since ${sinceDate(s.loggedFrom)}` : 'from now on'}. Choose all decks to see earlier ones.`),
+  );
+  return { section, scroller };
+}
+
+const CARD_KINDS = [
+  ['new', 'New', 'never studied'],
+  ['learning', 'Learning', 'in their first steps, or being relearned'],
+  ['young', 'Young', 'in review, with an interval under 21 days'],
+  ['mature', 'Mature', 'in review, with an interval of 21 days or more'],
+];
+
+function cardsPanel(s) {
+  const total = sum(Object.values(s.cards));
+  return panel(
+    'Cards',
+    `${plural(total, 'card')} by how well you know them.`,
+    h(
+      'div',
+      { class: 'stack', 'aria-hidden': 'true' },
+      CARD_KINDS.filter(([kind]) => s.cards[kind]).map(([kind, label]) =>
+        withTip(h('div', { class: `k-${kind}`, style: `flex-grow: ${s.cards[kind]}` }), plural(s.cards[kind], 'card'), `${label}, ${percent(s.cards[kind], total)}`),
+      ),
+    ),
+    h(
+      'ul',
+      { class: 'legend' },
+      CARD_KINDS.map(([kind, label, meaning]) =>
+        h(
+          'li',
+          { title: `${label}: ${meaning}` },
+          h('i', { class: `k-${kind}` }),
+          h('span', null, label),
+          h('b', null, s.cards[kind].toLocaleString()),
+          h('span', { class: 'share' }, percent(s.cards[kind], total)),
+        ),
+      ),
+    ),
+  );
+}
+
+function answersPanel(s) {
+  const { span } = statsRange;
+  const names = RATINGS.map((r) => r.label);
+  const max = Math.max(...s.answers.flat());
+  const since = s.partial && s.loggedFrom && `Recorded since ${sinceDate(s.loggedFrom)}; reviews before that are not broken down.`;
+  if (!max) {
+    const message = s.partial && !s.loggedFrom ? 'Recall has only just started recording which button you press. Study some cards to see the breakdown here.' : `No answers in the past ${span}.`;
+    return panel('Answer buttons', null, h('p', { class: 'panel-empty' }, message));
+  }
+  return panel(
+    'Answer buttons',
+    `How often you pressed each button over the past ${span}, by the kind of card.`,
+    h(
+      'div',
+      { class: 'answers', 'aria-hidden': 'true' },
+      s.answers.map((counts, kind) => {
+        const total = sum(counts);
+        return h(
+          'div',
+          { class: 'answer-kind' },
+          h('div', { class: 'answer-head' }, h('b', null, store.ANSWER_KINDS[kind]), h('span', null, total ? `${percent(total - counts[0], total)} correct` : 'No answers')),
+          h(
+            'div',
+            { class: 'answer-cols' },
+            counts.map((n, i) =>
+              withTip(
+                h('div', { class: 'answer-col' }, h('span', { class: 'cap' }, n.toLocaleString()), h('div', { class: 'chart-bar', style: `height: ${(n / max) * 96}px` }), h('span', null, names[i])),
+                plural(n, 'answer'),
+                total ? `${names[i]} on ${store.ANSWER_KINDS[kind].toLowerCase()} cards, ${percent(n, total)}` : names[i],
+              ),
+            ),
+          ),
+        );
+      }),
+    ),
+    dataTable('Answers by kind of card', ['Kind', ...names], s.answers.map((counts, kind) => [store.ANSWER_KINDS[kind], ...counts])),
+    since && h('p', { class: 'panel-note' }, since),
+  );
+}
+
+function renderStats(deck) {
+  const now = Date.now();
+  const decks = store.decks();
+  const s = store.statistics(deck?.id, statsRange.days, now);
+  const today = new Date(dayStart(now));
+  const reviews = [...s.answers[1], ...s.answers[2]];
+  const reviewed = sum(reviews);
+  const hasCards = sum(Object.values(s.cards)) > 0;
+
+  const deckSelect = h(
+    'select',
+    { 'aria-label': 'Deck', onchange: () => (location.hash = deckSelect.value ? `#/stats/${deckSelect.value}` : '#/stats') },
+    h('option', { value: '' }, 'All decks'),
+    decks.map((d) => h('option', { value: d.id, selected: d.id === deck?.id }, d.name)),
+  );
+  const activity = hasCards && activityPanel(s, today, deck);
+
+  app.replaceChildren(
+    h(
+      'div',
+      { class: 'page' },
+      topbar(),
+      h('a', { class: 'back', href: deck ? `#/deck/${deck.id}` : '#/' }, icon('back'), deck ? deck.name : 'All decks'),
+      h('div', { class: 'page-head', style: 'margin-top: 14px' }, h('div', null, h('h1', null, 'Statistics'), h('p', { class: 'sub' }, deck ? deck.name : 'All decks'))),
+      hasCards
+        ? [
+            h(
+              'div',
+              { class: 'filters' },
+              decks.length > 1 && deckSelect,
+              h(
+                'div',
+                { class: 'segmented', role: 'group', 'aria-label': 'Period' },
+                RANGES.map((range) =>
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      'aria-pressed': String(range === statsRange),
+                      onclick: () => {
+                        statsRange = range;
+                        render();
+                      },
+                    },
+                    range.label,
+                  ),
+                ),
+              ),
+            ),
+            h(
+              'div',
+              { class: 'summary' },
+              h('div', { class: 'stat' }, h('b', null, String(s.forecast[0])), s.forecast[0] === 1 ? 'review due today' : 'reviews due today'),
+              h('div', { class: 'stat' }, h('b', null, String(s.reviewedToday)), 'reviewed today'),
+              h('div', { class: 'stat' }, h('b', null, String(s.streak)), 'day streak'),
+              reviewed > 0 &&
+                h(
+                  'div',
+                  { class: 'stat', title: `Reviews you answered Hard, Good or Easy over the past ${statsRange.span}. Cards still being learned are not counted.` },
+                  h('b', null, percent(reviewed - reviews[0] - reviews[4], reviewed)),
+                  'retention',
+                ),
+            ),
+            forecastPanel(s, today),
+            activity.section,
+            cardsPanel(s),
+            answersPanel(s),
+          ]
+        : h(
+            'div',
+            { class: 'empty' },
+            h('h2', null, 'Nothing to show yet'),
+            h('p', null, 'Add some cards and study them. Your progress will be charted here.'),
+            h('a', { class: 'btn primary', href: deck ? `#/deck/${deck.id}` : '#/' }, deck ? 'Go to deck' : 'Go to decks'),
+          ),
+    ),
+  );
+  // Show the most recent weeks when the calendar is wider than the screen.
+  if (activity) activity.scroller.scrollLeft = activity.scroller.scrollWidth;
+}
+
 // ---- Routing and shortcuts ------------------------------------------------
 
 function route() {
@@ -1025,8 +1400,10 @@ function render() {
     stopSpeaking();
   }
   if (view !== 'deck') query = '';
+  tip.hidden = true;
   if (view === 'deck' && deck) renderDeck(deck);
   else if (view === 'study' && deck) renderStudy(deck);
+  else if (view === 'stats') renderStats(deck);
   else renderHome();
 }
 
