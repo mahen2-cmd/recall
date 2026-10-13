@@ -14,7 +14,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 - **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
-- **A reserve.** Keep cards aside in a deck, out of study, and pull in as many as you like when you are ready for them. Fill it from a CSV or Excel file.
+- **A reserve.** Keep cards aside in a deck, out of study, and pull in as many as you like when you are ready for them, in an order you can rearrange. Fill it from a CSV or Excel file.
 - **Statistics.** A forecast of upcoming reviews, a year-long activity calendar, how many cards are new, learning, young and mature, and how often you press each answer button.
 - **Read aloud.** A speaker button on each side of a card, a language for each side, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
 - **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day.
@@ -84,7 +84,8 @@ Each deck has its own:
 Each deck has a reserve: cards that are kept in the deck but out of study, so they are not counted as new cards and never come up, until you pull them in.
 
 - **Add to it** with **Import to reserve** on the deck's page, which takes a CSV or Excel file with one column for the front and one for the back. The ordinary import and the card editor also have a reserve checkbox.
-- **Pull from it** by typing how many cards you want and pressing **Pull in**, or take everything with **Pull all**. Cards come out oldest first, which for an imported file is the order of its rows.
+- **Pull from it** by typing how many cards you want and pressing **Pull in**, or take everything with **Pull all**. Cards come out from the front of the reserve, and are then studied in that order, after the new cards already waiting.
+- **Reorder it** with **Reorder**, which lists the reserve in the order it is pulled in. Drag a card to a new place, or tick several and drag one of them, or use **Up**, **Down**, **To top** and **To bottom**, to move them together. Until you rearrange it the reserve is oldest first, which for an imported file is the order of its rows; cards added afterwards join the end.
 
 Pulled cards become ordinary new cards, so they are introduced at the deck's new cards per day; raise that setting to study more of them at once. A card that has already been studied cannot go back on reserve.
 

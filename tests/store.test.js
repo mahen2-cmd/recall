@@ -166,6 +166,45 @@ test('reserve cards stay out of study until they are pulled', () => {
   assert.equal(store.counts(deck.id, T0).reserve, 1);
 });
 
+test('the reserve can be rearranged, and is pulled and studied in that order', () => {
+  const deck = setup();
+  store.addCards(deck.id, [['a', '-'], ['b', '-'], ['c', '-'], ['d', '-'], ['e', '-']], T0, { reserved: true });
+  const id = Object.fromEntries(store.cardsIn(deck.id).map((c) => [c.front, c.id]));
+  const order = () => store.reserveIn(deck.id).map((c) => c.front).join('');
+
+  // Cards moved together keep their own order.
+  assert.equal(store.moveInReserve(deck.id, [id.d, id.b], { before: id.a }), 2);
+  assert.equal(order(), 'bdace');
+  store.moveInReserve(deck.id, [id.b], { after: id.c });
+  assert.equal(order(), 'dacbe');
+  store.moveInReserve(deck.id, [id.d, id.c]);
+  assert.equal(order(), 'abedc');
+  assert.equal(store.moveInReserve(deck.id, ['no-such-card'], { before: id.a }), 0);
+
+  // Cards added later wait at the end, and the order survives a backup.
+  store.addCard(deck.id, 'f', '-', T0 + 100, { reserved: true });
+  store.importData(store.exportData());
+  assert.equal(order(), 'abedcf');
+  assert.deepEqual(store.findCards(deck.id, { sort: 'reserve' }, T0).map((c) => c.front).join(''), 'abedcf');
+
+  // Pulled cards come up after the new cards already waiting, in the order they had.
+  store.moveInReserve(deck.id, [id.e], { before: id.a });
+  store.addCard(deck.id, 'new', '-', T0 + 200);
+  assert.equal(store.pullFromReserve(deck.id, 2, T0 + 300), 2);
+  assert.equal(order(), 'bdcf');
+  const studied = [];
+  for (let card; (card = store.nextCard(deck.id, T0 + 400)); ) {
+    studied.push(card.front);
+    store.deleteCard(card.id);
+  }
+  assert.deepEqual(studied, ['new', 'e', 'a']);
+
+  // A card taken off the reserve and put back goes to the end.
+  store.updateCard(id.b, { reserved: undefined });
+  store.updateCard(id.b, { reserved: true });
+  assert.equal(order(), 'dcfb');
+});
+
 test('findCards filters by group, text, dates and lapses, and sorts', () => {
   const deck = setup();
   const fresh = store.addCard(deck.id, 'Banana', 'yellow', T0);

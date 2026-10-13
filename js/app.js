@@ -27,7 +27,7 @@ const FILTER_SELECTS = [
   ['due', 'Next review', [['any', 'Any time'], ['overdue', 'Overdue'], ['today', 'Today or overdue'], ['week', 'Within 7 days'], ['month', 'Within 30 days']]],
   ['added', 'Added', [['any', 'Any time'], ['today', 'Today'], ['week', 'In the last 7 days'], ['month', 'In the last 30 days']]],
   ['lapses', 'Forgotten', [['any', 'Any'], ['some', 'At least once'], ['many', '3 times or more']]],
-  ['sort', 'Sort by', [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['due', 'Next review'], ['front', 'Front, A to Z'], ['lapses', 'Most forgotten']]],
+  ['sort', 'Sort by', [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['due', 'Next review'], ['front', 'Front, A to Z'], ['lapses', 'Most forgotten'], ['reserve', 'Reserve order']]],
 ];
 
 // ---- DOM helpers ----------------------------------------------------------
@@ -64,6 +64,9 @@ const ICONS = {
   play: '<path d="M7 5l12 7-12 7V5z"/>',
   chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
   box: '<path d="M4 8h16v11H4zM3 5h18v3H3zM10 12h4"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/>',
 };
 
 function icon(name) {
@@ -833,7 +836,7 @@ function renderHome() {
   );
 }
 
-/** A deck's reserve: how many cards are waiting, and the controls to pull some in. */
+/** A deck's reserve: how many cards are waiting, and the controls to pull some in or rearrange them. */
 function reserveBar(deck, n) {
   const pull = (count) => {
     const pulled = store.pullFromReserve(deck.id, count);
@@ -855,9 +858,25 @@ function reserveBar(deck, n) {
       'div',
       { class: 'reserve-text' },
       h('b', null, n ? `${plural(n, 'card')} on reserve` : 'Nothing on reserve'),
-      h('span', null, n ? 'Kept out of study until you pull them in, oldest first.' : 'Cards on reserve are kept out of study until you pull them in.'),
+      h('span', null, n ? 'Kept out of study until you pull them in, the first in line first.' : 'Cards on reserve are kept out of study until you pull them in.'),
     ),
     n > 0 && [amount, h('button', { class: 'btn primary', type: 'submit' }, 'Pull in'), n > 1 && h('button', { class: 'btn', type: 'button', onclick: () => pull(n) }, `Pull all ${n.toLocaleString()}`)],
+    n > 1 &&
+      h(
+        'button',
+        {
+          class: 'btn',
+          type: 'button',
+          title: 'List the reserve in the order it is pulled in, to rearrange it',
+          onclick: () => {
+            query = '';
+            filters = { ...NO_FILTERS, groups: ['reserve'], sort: 'reserve' };
+            render();
+          },
+        },
+        icon('up'),
+        'Reorder',
+      ),
     h('button', { class: 'btn', type: 'button', title: 'Import cards from a CSV or Excel file straight into the reserve', onclick: () => pickImportFile(deck, true) }, icon('upload'), 'Import to reserve'),
   );
 }
@@ -918,6 +937,8 @@ function renderDeck(deck) {
 
   const list = h('div');
   const shown = h('span', { class: 'count' });
+  // Ids of the reserve cards being dragged to a new place.
+  let dragged = null;
 
   const drawList = () => {
     const q = query.trim();
@@ -928,6 +949,23 @@ function renderDeck(deck) {
       for (const id of ids) on ? selected.add(id) : selected.delete(id);
       drawList();
     };
+    // In reserve order, the reserve cards shown can be moved: `line` is those, first to last.
+    const line = filters.sort === 'reserve' ? matches.filter((card) => card.reserved) : [];
+    const picked = line.filter((card) => selected.has(card.id));
+    const waiting = line.filter((card) => !selected.has(card.id));
+    const movable = picked.length > 0 && picked.length === selected.size;
+    const move = (ids, where) => {
+      dragged = null;
+      store.moveInReserve(deck.id, ids, where);
+      drawList();
+    };
+    // One place up or down among the cards shown, which gathers the ticked cards together.
+    const step = (down) => {
+      const edge = line.indexOf(picked.at(down ? -1 : 0));
+      const anchor = line[edge + (down ? 1 : -1)] ?? waiting.at(down ? -1 : 0);
+      if (anchor) move([...selected], { [down ? 'after' : 'before']: anchor.id });
+    };
+    const moveButton = (label, title, onclick, glyph) => h('button', { class: 'btn', type: 'button', title, onclick }, glyph && icon(glyph), label);
     if (!matches.length) {
       const message = q && !filtering ? `No cards match “${q}”.` : q ? `No cards match “${q}” with these filters.` : 'No cards match these filters.';
       list.replaceChildren(h('div', { class: 'card-list' }, h('div', { class: 'list-empty' }, message)));
@@ -951,6 +989,17 @@ function renderDeck(deck) {
             }),
             selected.size ? `${selected.size.toLocaleString()} selected` : matches.length === cards.length ? 'Select all' : `Select all ${matches.length.toLocaleString()} shown`,
           ),
+          line.length > 1 && !selected.size && h('span', { class: 'hint' }, 'Drag cards to reorder them, or tick several to move them together.'),
+          movable &&
+            line.length > 1 && [
+              moveButton('Up', 'Move up one place', () => step(false), 'up'),
+              moveButton('Down', 'Move down one place', () => step(true), 'down'),
+              moveButton('To top', 'Move to the front of the reserve, to be pulled in first', () => {
+                const first = store.reserveIn(deck.id).find((card) => !selected.has(card.id));
+                if (first) move([...selected], { before: first.id });
+              }),
+              moveButton('To bottom', 'Move to the end of the reserve, to be pulled in last', () => move([...selected])),
+            ],
           selected.size > 0 && [
             h('button', { class: 'btn danger', type: 'button', onclick: () => removeCards([...selected]) }, icon('trash'), `Delete ${plural(selected.size, 'card')}`),
             h('button', { class: 'btn ghost', type: 'button', onclick: () => pick([...selected], false) }, 'Cancel'),
@@ -958,12 +1007,49 @@ function renderDeck(deck) {
         ),
         matches.map((card) => {
           const status = cardStatus(card, now);
-          return h(
+          const sortable = line.length > 1 && card.reserved;
+          // Dropping on the lower half of a row puts the cards after it.
+          const below = (e) => {
+            const box = row.getBoundingClientRect();
+            return e.clientY > box.top + box.height / 2;
+          };
+          const mark = (side) => {
+            row.classList.toggle('drop-before', side === 'before');
+            row.classList.toggle('drop-after', side === 'after');
+          };
+          const row = h(
             'div',
-            { class: `card-row ${selected.has(card.id) ? 'selected' : ''}`, onclick: () => openCardDialog({ card }) },
+            {
+              class: `card-row ${selected.has(card.id) ? 'selected' : ''}`,
+              onclick: () => openCardDialog({ card }),
+              ...(sortable && {
+                draggable: true,
+                // Dragging a ticked card takes the other ticked cards along.
+                ondragstart: (e) => {
+                  dragged = selected.has(card.id) ? picked.map((c) => c.id) : [card.id];
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', card.front);
+                },
+                ondragover: (e) => {
+                  if (!dragged || dragged.includes(card.id)) return;
+                  e.preventDefault();
+                  mark(below(e) ? 'after' : 'before');
+                },
+                ondragleave: () => mark(),
+                ondrop: (e) => {
+                  if (!dragged || dragged.includes(card.id)) return;
+                  e.preventDefault();
+                  move(dragged, { [below(e) ? 'after' : 'before']: card.id });
+                },
+                ondragend: () => {
+                  dragged = null;
+                },
+              }),
+            },
             h(
               'label',
               { class: 'pick', onclick: (e) => e.stopPropagation() },
+              sortable && h('span', { class: 'grip', title: 'Drag to reorder' }, icon('grip')),
               h('input', { type: 'checkbox', 'aria-label': 'Select card', checked: selected.has(card.id), onchange: (e) => pick([card.id], e.target.checked) }),
             ),
             h('div', { class: 'text' }, card.front),
@@ -976,6 +1062,7 @@ function renderDeck(deck) {
               iconButton('trash', 'Delete card', () => removeCard(card), 'danger'),
             ),
           );
+          return row;
         }),
       ),
     );

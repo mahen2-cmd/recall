@@ -256,17 +256,55 @@ export function importAnkiDecks(imported, now = Date.now()) {
 export const ankiCardIds = () => new Set(state.cards.map((c) => c.ankiId).filter(Boolean));
 
 export function updateCard(id, patch) {
-  Object.assign(card(id), patch, { updated: Date.now() });
+  const c = card(id);
+  const moved = patch.deckId && patch.deckId !== c.deckId;
+  Object.assign(c, patch, { updated: Date.now() });
+  // A place in the reserve does not outlast leaving it, or changing deck.
+  if (!c.reserved || moved) delete c.order;
   save();
 }
 
-/** A deck's reserve, oldest first: the order cards are pulled in. */
-export const reserveIn = (deckId) => cardsIn(deckId).filter((c) => c.reserved).sort((a, b) => a.created - b.created);
+// Once a reserve has been rearranged its cards carry their place in `order`. Cards added
+// after that have none, and wait behind the rest, oldest first.
+const byReserveOrder = (a, b) => {
+  const placed = (a.order ?? Infinity) - (b.order ?? Infinity);
+  return placed || a.created - b.created;
+};
 
-/** Move up to `n` cards from a deck's reserve in with its new cards. Returns how many moved. */
-export function pullFromReserve(deckId, n = Infinity) {
+/** A deck's reserve in the order its cards are pulled in: as arranged, otherwise oldest first. */
+export const reserveIn = (deckId) => cardsIn(deckId).filter((c) => c.reserved).sort(byReserveOrder);
+
+/**
+ * Move cards of a deck's reserve together to a new place in it, keeping their own order:
+ * just `before` or `after` the card with that id, or to the end when neither is given.
+ * Returns how many moved.
+ */
+export function moveInReserve(deckId, ids, { before, after } = {}) {
+  const moving = new Set(ids);
+  const all = reserveIn(deckId);
+  const moved = all.filter((c) => moving.has(c.id));
+  if (!moved.length) return 0;
+  const rest = all.filter((c) => !moving.has(c.id));
+  const anchor = rest.findIndex((c) => c.id === (before ?? after));
+  rest.splice(anchor < 0 ? rest.length : anchor + (before ? 0 : 1), 0, ...moved);
+  rest.forEach((c, i) => {
+    c.order = i;
+  });
+  save();
+  return moved.length;
+}
+
+/**
+ * Move up to `n` cards from the front of a deck's reserve in with its new cards, where
+ * they wait behind the new cards already there, in the order they had. Returns how many moved.
+ */
+export function pullFromReserve(deckId, n = Infinity, now = Date.now()) {
   const pulled = reserveIn(deckId).slice(0, Math.max(0, n));
-  for (const c of pulled) delete c.reserved;
+  pulled.forEach((c, i) => {
+    delete c.reserved;
+    delete c.order;
+    c.pulled = now + i;
+  });
   if (pulled.length) save();
   return pulled.length;
 }
@@ -293,6 +331,7 @@ const SORTS = {
   oldest: (a, b) => a.created - b.created,
   front: (a, b) => a.front.localeCompare(b.front, undefined, { sensitivity: 'base' }),
   lapses: (a, b) => b.lapses - a.lapses || b.created - a.created,
+  reserve: (a, b) => Boolean(b.reserved) - Boolean(a.reserved) || (a.reserved ? byReserveOrder(a, b) : b.created - a.created),
 };
 
 /**
@@ -303,7 +342,8 @@ const SORTS = {
  *           New and reserve cards have no review coming, so any of these leaves them out.
  *   added   'today', 'week' or 'month': how recently the card was created
  *   lapses  'some' (forgotten at least once) or 'many' (three times or more)
- *   sort    'newest', 'oldest', 'due' (soonest first), 'front' (A to Z) or 'lapses'
+ *   sort    'newest', 'oldest', 'due' (soonest first), 'front' (A to Z), 'lapses' or
+ *           'reserve' (the reserve first, in the order it is pulled in)
  */
 export function findCards(deckId, { text = '', groups = [], due = 'any', added = 'any', lapses = 'any', sort = 'newest' } = {}, now = Date.now()) {
   const q = text.trim().toLowerCase();
@@ -352,7 +392,7 @@ function queue(deckId, now) {
       .sort((a, b) => a.due - b.due),
     fresh: all
       .filter((c) => c.state === State.New)
-      .sort((a, b) => a.created - b.created)
+      .sort((a, b) => (a.pulled ?? a.created) - (b.pulled ?? b.created))
       .slice(0, allowance),
   };
 }
