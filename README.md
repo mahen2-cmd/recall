@@ -14,7 +14,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 - **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
-- **A reserve.** Keep cards aside in a deck, out of study, and pull in as many as you like when you are ready for them, in an order you can rearrange. Fill it from a CSV or Excel file.
+- **A reserve.** Keep cards aside in a deck, out of study, and pull in as many as you like when you are ready for them, in an order you can rearrange. Fill it from a CSV or Excel file, or with reversed copies of cards you choose.
 - **Statistics.** A forecast of upcoming reviews, a year-long activity calendar, how many cards are new, learning, young and mature, and how often you press each answer button.
 - **Read aloud.** A speaker button on each side of a card, a language for each side, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
 - **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day.
@@ -87,7 +87,9 @@ Each deck has a reserve: cards that are kept in the deck but out of study, so th
 - **Pull from it** by typing how many cards you want and pressing **Pull in**, or take everything with **Pull all**. Cards come out from the front of the reserve, and are then studied in that order, after the new cards already waiting.
 - **Reorder it** with **Reorder**, which lists the reserve in the order it is pulled in. Drag a card to a new place, or tick several and drag one of them, or use **Up**, **Down**, **To top** and **To bottom**, to move them together. Until you rearrange it the reserve is oldest first, which for an imported file is the order of its rows; cards added afterwards join the end.
 
-Pulled cards become ordinary new cards, so they are introduced at the deck's new cards per day; raise that setting to study more of them at once. A card that has already been studied cannot go back on reserve.
+- **Add reversed cards** by ticking cards in the deck's list and pressing **Add reversed**. Each ticked card gets a copy with its front and back swapped, placed at the end of the reserve with a schedule of its own, and left ticked so you can move the copies straight away. A card that already has a reversed version in the deck is skipped. A reversed card is read aloud in the right language on each side, and auto-play follows the language rather than the side.
+
+Pulled cards become ordinary new cards, so they are introduced at the deck's new cards per day; raise that setting to study more of them at once. To put cards back, tick them in the deck's list, whether new, learning or due, and press **Back to reserve**; they join the end of the reserve. A card that has already been studied loses its progress and starts over as a new card when pulled in again, so you are asked first.
 
 ## Statistics
 

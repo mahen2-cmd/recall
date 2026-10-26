@@ -309,6 +309,53 @@ export function pullFromReserve(deckId, n = Infinity, now = Date.now()) {
   return pulled.length;
 }
 
+/**
+ * Put the cards named back on their deck's reserve, at the end of it in the order given.
+ * A card already studied starts over as a new card, since the reserve holds only those.
+ * Cards already on reserve are skipped. Returns how many went back.
+ */
+export function returnToReserve(ids, now = Date.now()) {
+  const back = ids.map(card).filter((c) => c && !c.reserved);
+  for (const c of back) {
+    if (c.state !== State.New) Object.assign(c, newSchedule(now));
+    delete c.pulled;
+    c.reserved = true;
+    c.updated = now;
+  }
+  // Number them behind the rest of each reserve, so they wait at the end, whatever their age.
+  for (const deckId of new Set(back.map((c) => c.deckId))) {
+    const all = reserveIn(deckId).filter((c) => !back.includes(c));
+    all.push(...back.filter((c) => c.deckId === deckId));
+    all.forEach((c, i) => {
+      c.order = i;
+    });
+  }
+  if (back.length) save();
+  return back.length;
+}
+
+/**
+ * Add a reversed copy of each card named, its back as the front, to the end of its deck's
+ * reserve. A copy is marked `reversed`, so each side is still read in its own language.
+ * Cards whose reverse is already in their deck are skipped. Returns the cards added.
+ */
+export function addReversed(ids, now = Date.now()) {
+  const key = (deckId, front, back) => [deckId, front, back].map((text) => text.trim().toLowerCase()).join('\n');
+  const known = new Set(state.cards.map((c) => key(c.deckId, c.front, c.back)));
+  const added = [];
+  for (const c of ids.map(card).filter(Boolean)) {
+    const copy = key(c.deckId, c.back, c.front);
+    if (known.has(copy)) continue;
+    known.add(copy);
+    // Stagger creation times so the copies keep the order of their originals.
+    const created = now + added.length;
+    added.push({ id: uid(), deckId: c.deckId, front: c.back, back: c.front, created, updated: created, ...newSchedule(now), reserved: true, ...(!c.reversed && { reversed: true }) });
+  }
+  state.cards.push(...added);
+  if (added.length) save();
+  return added;
+}
+
 /** Delete several cards at once. Returns how many were deleted. */
 export function deleteCards(ids) {
   const doomed = new Set(ids);
@@ -397,12 +444,32 @@ function queue(deckId, now) {
   };
 }
 
-/** How many cards are waiting in a deck today, by kind, and how many it holds in all and on reserve. */
+/**
+ * How many cards are waiting in a deck today, by kind, and how many it holds in all and on reserve.
+ * `tomorrow` counts the same kinds for tomorrow, supposing today's cards are all studied: the
+ * learning and review cards already scheduled for then, and the new cards left after today's, up
+ * to the daily limit. The reserve is left out, as its cards only come in when pulled.
+ */
 export function counts(deckId, now = Date.now()) {
   const q = queue(deckId, now);
   const n = { new: q.fresh.length, learning: q.learning.length, review: q.review.length };
   const all = cardsIn(deckId);
-  return { ...n, total: n.new + n.learning + n.review, cards: all.length, reserve: all.filter((c) => c.reserved).length };
+  const studied = all.filter((c) => !c.reserved);
+  const start = nextDayAt(now);
+  const end = nextDayAt(start);
+  const scheduled = studied.filter((c) => c.state !== State.New && c.due >= start && c.due < end);
+  const next = {
+    new: Math.min(deck(deckId).newPerDay, studied.filter((c) => c.state === State.New).length - n.new),
+    learning: scheduled.filter(isLearning).length,
+    review: scheduled.filter((c) => c.state === State.Review).length,
+  };
+  return {
+    ...n,
+    total: n.new + n.learning + n.review,
+    tomorrow: { ...next, total: next.new + next.learning + next.review },
+    cards: all.length,
+    reserve: all.filter((c) => c.reserved).length,
+  };
 }
 
 /** The next card to study, or `undefined` when the deck is done for today. */

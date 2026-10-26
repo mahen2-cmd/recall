@@ -51,6 +51,36 @@ test('new cards per day limit is enforced', () => {
   assert.equal(store.counts(deck.id, T0 + DAY).new, 2);
 });
 
+test('tomorrow counts the new cards left after today, up to the daily limit', () => {
+  const deck = setup({ newPerDay: 2 });
+  for (let i = 0; i < 3; i++) store.addCard(deck.id, `q${i}`, `a${i}`, T0 + i);
+  store.addCard(deck.id, 'kept', 'back', T0, { reserved: true });
+  assert.equal(store.counts(deck.id, T0).tomorrow.new, 1);
+
+  store.addCard(deck.id, 'q3', 'a3', T0 + 3);
+  store.addCard(deck.id, 'q4', 'a4', T0 + 4);
+  assert.equal(store.counts(deck.id, T0).tomorrow.new, 2);
+
+  // Studying today's new cards does not change tomorrow's.
+  store.answerCard(store.nextCard(deck.id, T0).id, Rating.Easy, T0);
+  assert.equal(store.counts(deck.id, T0).tomorrow.new, 2);
+
+  store.deleteCards(store.cardsIn(deck.id).filter((c) => c.state === State.New && !c.reserved).map((c) => c.id));
+  assert.equal(store.counts(deck.id, T0).tomorrow.new, 0);
+});
+
+test('tomorrow counts the learning and review cards scheduled for that day', () => {
+  const deck = setup({ newPerDay: 0 });
+  const [learning, dueTomorrow, dueLater, dueToday] = ['l', 't', 'x', 'd'].map((f) => store.addCard(deck.id, f, f, T0));
+  const tomorrow = T0 + DAY;
+  store.updateCard(learning.id, { state: State.Relearning, due: tomorrow });
+  store.updateCard(dueTomorrow.id, { state: State.Review, due: tomorrow });
+  store.updateCard(dueLater.id, { state: State.Review, due: T0 + 2 * DAY });
+  store.updateCard(dueToday.id, { state: State.Review, due: T0 });
+
+  assert.deepEqual(store.counts(deck.id, T0).tomorrow, { new: 0, learning: 1, review: 1, total: 2 });
+});
+
 test('queue order: due learning, then reviews, then new, then waiting learning', () => {
   const deck = setup();
   const learning = store.addCard(deck.id, 'learning', '-', T0);
@@ -203,6 +233,53 @@ test('the reserve can be rearranged, and is pulled and studied in that order', (
   store.updateCard(id.b, { reserved: undefined });
   store.updateCard(id.b, { reserved: true });
   assert.equal(order(), 'dcfb');
+});
+
+test('new, learning and due cards can go back on the reserve, starting over', () => {
+  const deck = setup();
+  store.addCards(deck.id, [['r1', '-'], ['r2', '-']], T0, { reserved: true });
+  const fresh = store.addCard(deck.id, 'fresh', '-', T0 + 1);
+  const learning = store.addCard(deck.id, 'learning', '-', T0 + 2);
+  const due = store.addCard(deck.id, 'due', '-', T0 + 3);
+  store.answerCard(learning.id, Rating.Good, T0 + 10);
+  store.answerCard(due.id, Rating.Easy, T0 + 10);
+  assert.notEqual(store.card(learning.id).state, State.New);
+  assert.equal(store.card(due.id).state, State.Review);
+  store.moveInReserve(deck.id, [store.reserveIn(deck.id)[1].id], { before: store.reserveIn(deck.id)[0].id });
+
+  const [r1] = store.reserveIn(deck.id).slice(-1);
+  assert.equal(store.returnToReserve([due.id, fresh.id, learning.id, r1.id, 'no-such-card'], T0 + DAY), 3);
+  // They join the end of the reserve in the order given, as new cards.
+  assert.deepEqual(store.reserveIn(deck.id).map((c) => c.front), ['r2', 'r1', 'due', 'fresh', 'learning']);
+  for (const id of [due.id, learning.id]) {
+    const c = store.card(id);
+    assert.deepEqual([c.state, c.reps, c.lapses, c.lastReview], [State.New, 0, 0, null]);
+  }
+  assert.equal(store.nextCard(deck.id, T0 + DAY), undefined);
+  assert.equal(store.counts(deck.id, T0 + DAY).reserve, 5);
+});
+
+test('reversed copies of cards go on the reserve, once', () => {
+  const deck = setup();
+  const hello = store.addCard(deck.id, 'hello', 'olá', T0);
+  const thanks = store.addCard(deck.id, 'thanks', 'obrigado', T0 + 1, { reserved: true });
+  const same = store.addCard(deck.id, 'taxi', 'Taxi ', T0 + 2);
+
+  const added = store.addReversed([thanks.id, hello.id, same.id, 'no-such-card'], T0 + 10);
+  assert.deepEqual(added.map((c) => [c.front, c.back, c.reserved, c.reversed, c.state]), [
+    ['obrigado', 'thanks', true, true, State.New],
+    ['olá', 'hello', true, true, State.New],
+  ]);
+  // They join the end of the reserve in the order given, and the originals are untouched.
+  assert.deepEqual(store.reserveIn(deck.id).map((c) => c.front), ['thanks', 'obrigado', 'olá']);
+  assert.equal(store.card(hello.id).reserved, undefined);
+
+  // Neither a card nor its copy gets a second one.
+  assert.deepEqual(store.addReversed([hello.id, added[1].id, thanks.id]), []);
+  // Reversing a copy whose original is gone gives an ordinary card back.
+  store.deleteCard(hello.id);
+  const [again] = store.addReversed([added[1].id]);
+  assert.deepEqual([again.front, again.back, again.reversed], ['hello', 'olá', undefined]);
 });
 
 test('findCards filters by group, text, dates and lapses, and sorts', () => {

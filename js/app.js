@@ -66,6 +66,7 @@ const ICONS = {
   box: '<path d="M4 8h16v11H4zM3 5h18v3H3zM10 12h4"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  swap: '<path d="M7 4L3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/>',
 };
 
@@ -103,6 +104,11 @@ function cardStatus(card, now) {
   const days = Math.round((new Date(card.due).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / DAY);
   if (days <= 0) return { kind: 'review', label: 'Due today' };
   return { kind: 'zero', label: `Due in ${formatInterval(days * DAY)}` };
+}
+
+function tomorrowText({ tomorrow: t, reserve }) {
+  if (!t.total) return reserve ? 'Nothing comes tomorrow. Pull some cards in from the reserve.' : 'Nothing comes tomorrow.';
+  return `Tomorrow: ${plural(t.total, 'card')} (${t.new.toLocaleString()} new, ${t.learning.toLocaleString()} learning, ${t.review.toLocaleString()} due)`;
 }
 
 function countPills(c) {
@@ -166,15 +172,21 @@ function prepareSpeech(text, lang) {
   if (serverVoice() && text.trim()) fetch(ttsUrl(text, lang)).catch(() => {});
 }
 
-/** Read one side of a card aloud, in that side's language. */
-const speakSideOf = (card, deck, side) => speak(card[side], deck[`${side}Lang`], deck.speechRate);
+// A reversed card shows the deck's back on its front, so each of its sides takes the
+// language and the auto-play setting of the deck's other side.
+const deckSide = (card, side) => (card.reversed ? (side === 'front' ? 'back' : 'front') : side);
+const sideLang = (card, deck, side) => deck[`${deckSide(card, side)}Lang`];
 
-const speaksSide = (deck, side) => deck.speak === side || deck.speak === 'both';
+/** Read one side of a card aloud, in that side's language. */
+const speakSideOf = (card, deck, side) => speak(card[side], sideLang(card, deck, side), deck.speechRate);
+
+const speaksSide = (card, deck, side) => deck.speak === deckSide(card, side) || deck.speak === 'both';
 
 function prepareCardSpeech(card) {
   const deck = store.deck(card.deckId);
-  if (speaksSide(deck, 'front')) prepareSpeech(card.front, deck.frontLang);
-  if (speaksSide(deck, 'back')) prepareSpeech(card.back, deck.backLang);
+  for (const side of ['front', 'back']) {
+    if (speaksSide(card, deck, side)) prepareSpeech(card[side], sideLang(card, deck, side));
+  }
 }
 
 const speakButton = (card, deck, side) =>
@@ -438,6 +450,38 @@ async function removeCards(ids) {
   const deleted = store.deleteCards(ids);
   selected = new Set();
   toast(`${plural(deleted, 'card')} deleted`);
+  render();
+}
+
+/** Put a reversed copy of each card on the reserve, and leave the copies ticked, ready to be moved. */
+function addReversedCards(ids) {
+  const added = store.addReversed(ids);
+  const skipped = ids.length - added.length;
+  const already = skipped ? `${skipped.toLocaleString()} already had one` : '';
+  if (added.length) {
+    selected = new Set(added.map((card) => card.id));
+    toast(`${plural(added.length, 'reversed card')} added to the reserve${already && `, ${already}`}`);
+  } else {
+    toast(skipped === 1 ? 'This card already has a reversed version' : 'These cards already have reversed versions');
+  }
+  render();
+}
+
+/** Put cards back on the reserve, after asking first if that wipes out their progress. */
+async function returnCardsToReserve(ids) {
+  const studied = ids.map(store.card).filter((card) => card && !card.reserved && card.state !== State.New).length;
+  if (studied) {
+    const one = studied === 1;
+    const which = ids.length === 1 ? 'This card has' : one ? 'One of these cards has' : `${studied.toLocaleString()} of these cards have`;
+    const ok = await confirmDialog({
+      title: `Put ${plural(ids.length, 'card')} back on reserve?`,
+      message: `${which} already been studied. ${one ? 'Its' : 'Their'} progress will be reset, and ${one ? 'it starts' : 'they start'} over as new when pulled in again.`,
+      confirmLabel: 'Put back on reserve',
+    });
+    if (!ok) return;
+  }
+  const moved = store.returnToReserve(ids);
+  toast(`${plural(moved, 'card')} put back on reserve`);
   render();
 }
 
@@ -767,7 +811,11 @@ function renderHome() {
         'a',
         { class: 'deck-main', href: `#/deck/${deck.id}` },
         h('div', { class: 'deck-name' }, deck.name),
-        h('div', { class: 'deck-meta' }, plural(c.cards, 'card') + (c.reserve ? `, ${c.reserve.toLocaleString()} on reserve` : '')),
+        h(
+          'div',
+          { class: 'deck-meta' },
+          plural(c.cards, 'card') + (c.reserve ? `, ${c.reserve.toLocaleString()} on reserve` : '') + (c.tomorrow.total ? ` · ${c.tomorrow.total.toLocaleString()} tomorrow` : ''),
+        ),
         countPills(c),
       ),
       h(
@@ -954,6 +1002,8 @@ function renderDeck(deck) {
     const picked = line.filter((card) => selected.has(card.id));
     const waiting = line.filter((card) => !selected.has(card.id));
     const movable = picked.length > 0 && picked.length === selected.size;
+    // Ticked cards not on reserve, which can be put back on it.
+    const unreserved = matches.filter((card) => selected.has(card.id) && !card.reserved).map((card) => card.id);
     const move = (ids, where) => {
       dragged = null;
       store.moveInReserve(deck.id, ids, where);
@@ -1001,6 +1051,19 @@ function renderDeck(deck) {
               moveButton('To bottom', 'Move to the end of the reserve, to be pulled in last', () => move([...selected])),
             ],
           selected.size > 0 && [
+            unreserved.length > 0 &&
+              h(
+                'button',
+                { class: 'btn', type: 'button', title: 'Take the ticked cards out of study and put them at the end of the reserve', onclick: () => returnCardsToReserve(unreserved) },
+                icon('box'),
+                'Back to reserve',
+              ),
+            h(
+              'button',
+              { class: 'btn', type: 'button', title: 'Add a copy of each ticked card with its front and back swapped, on the reserve', onclick: () => addReversedCards([...selected]) },
+              icon('swap'),
+              'Add reversed',
+            ),
             h('button', { class: 'btn danger', type: 'button', onclick: () => removeCards([...selected]) }, icon('trash'), `Delete ${plural(selected.size, 'card')}`),
             h('button', { class: 'btn ghost', type: 'button', onclick: () => pick([...selected], false) }, 'Cancel'),
           ],
@@ -1104,7 +1167,7 @@ function renderDeck(deck) {
       h(
         'div',
         { class: 'page-head', style: 'margin-top: 14px' },
-        h('div', null, h('h1', null, deck.name), countPills(c)),
+        h('div', null, h('h1', null, deck.name), countPills(c), h('div', { class: 'deck-meta tomorrow' }, tomorrowText(c))),
         h(
           'div',
           { class: 'actions' },
@@ -1190,6 +1253,7 @@ function renderStudy(deck) {
                 ? `You reviewed ${plural(session.done, 'card')} this session. Come back tomorrow for more.`
                 : 'Nothing is due in this deck right now.',
           ),
+          !empty && h('p', null, tomorrowText(c)),
           h('a', { class: 'btn primary', href: empty ? `#/deck/${deck.id}` : '#/' }, empty ? 'Go to deck' : 'Back to decks'),
         ),
       ),
@@ -1205,9 +1269,9 @@ function renderStudy(deck) {
   if (session.spoken !== shown) {
     session.spoken = shown;
     const side = session.revealed ? 'back' : 'front';
-    if (speaksSide(deck, side)) speakSideOf(card, deck, side);
+    if (speaksSide(card, deck, side)) speakSideOf(card, deck, side);
     else stopSpeaking();
-    if (!session.revealed && speaksSide(deck, 'back')) prepareSpeech(card.back, deck.backLang);
+    if (!session.revealed && speaksSide(card, deck, 'back')) prepareSpeech(card.back, sideLang(card, deck, 'back'));
   }
 
   app.replaceChildren(

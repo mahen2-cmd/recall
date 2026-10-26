@@ -364,6 +364,9 @@ kbd {
   font-size: 13.5px;
   margin-top: 2px;
 }
+.deck-meta.tomorrow {
+  margin-top: 8px;
+}
 .deck-foot {
   display: flex;
   align-items: center;
