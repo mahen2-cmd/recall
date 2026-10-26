@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "setup-voice": "bash scripts/setup-voice.sh",
+    "cache-voice": "node scripts/cache-voice.js",
     "test": "node --test"
   }
 }

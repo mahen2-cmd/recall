@@ -195,13 +195,15 @@ export function createTts({ root, dataDir }) {
     const hash = createHash('sha256').update(text).digest('hex').slice(0, 32);
     // Use the best engine that works, so a failure or being offline still gives some audio.
     let failure;
-    for (const { name, make } of await engines(lang)) {
+    const list = await engines(lang);
+    for (const { name, make } of list) {
       const base = join(audioDir, name.replace(/[^\w.-]/g, '_'), hash);
+      const preferred = name === list[0].name;
       const hit = await cached(base);
-      if (hit) return hit;
+      if (hit) return { file: hit, engine: name, preferred, fresh: false };
       await mkdir(join(base, '..'), { recursive: true });
       try {
-        return await make(text, base);
+        return { file: await make(text, base), engine: name, preferred, fresh: true };
       } catch (error) {
         if (error.http) throw error; // a problem with the Azure key or voice: report it
         failure = error;
@@ -211,10 +213,12 @@ export function createTts({ root, dataDir }) {
   }
 
   /**
-   * Audio for `text` as `{ body, type }`, generating and caching it if needed.
+   * Generate and cache the audio for `text` if it is not cached yet. Returns
+   * `{ file, engine, preferred, fresh }`: the engine that made it, whether that is the first
+   * choice rather than a fallback, and whether it was made just now.
    * `lang` is a language such as 'en-US'; without it the configured voice's language is used.
    */
-  async function speak(raw, lang) {
+  async function prepare(raw, lang) {
     const text = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT);
     if (!text) throw new Error('Nothing to say');
     if (lang && !/^[a-z]{2,3}(-[A-Z]{2})?$/.test(lang)) throw new Error('Unknown language');
@@ -222,9 +226,14 @@ export function createTts({ root, dataDir }) {
     if (!inFlight.has(key)) {
       inFlight.set(key, generate(text, lang || undefined).finally(() => inFlight.delete(key)));
     }
-    const file = await inFlight.get(key);
+    return inFlight.get(key);
+  }
+
+  /** Audio for `text` as `{ body, type }`, generating and caching it if needed. */
+  async function speak(raw, lang) {
+    const { file } = await prepare(raw, lang);
     return { body: await readFile(file), type: TYPES[file.slice(-3)] };
   }
 
-  return { engine, speak };
+  return { engine, prepare, speak };
 }

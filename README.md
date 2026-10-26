@@ -146,6 +146,8 @@ The speaker reads each side of a card in the language set for it in the deck's s
 
 The Google Translate and Edge engines use addresses those companies do not publish for this purpose, so either could stop working without notice. When one fails, the next engine takes over. If the Edge voice breaks, running `npm run setup-voice` again updates it.
 
+To have every card ready to be read aloud, reserve included, run `npm run cache-voice`. It saves the audio for both sides of each card ahead of time, so studying never waits on the voice engine or needs the internet. Clips already saved are skipped, so it can be stopped at any time and run again to carry on, or to fetch the cards added since. It pauses after each new clip to go easy on the engine (`npm run cache-voice -- --delay=1500` to pause longer), and stops if the first-choice engine stops answering rather than filling in with a fallback voice.
+
 To change the engine or voice, create `data/tts.json`. Every field is optional:
 
 ```json
