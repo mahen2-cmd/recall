@@ -1,4 +1,4 @@
-import { hasRichContent, imageToken, parseContent, speechText } from './content.js';
+import { hasRichContent, imageToken, mathSpans, mathToken, parseContent, speechText } from './content.js';
 import { DAY, MINUTE, Rating, State, dayStart } from './fsrs.js';
 import { parseSpreadsheet } from './importer.js';
 import * as store from './store.js';
@@ -69,6 +69,7 @@ const ICONS = {
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   swap: '<path d="M7 4L3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/>',
+  sigma: '<path d="M18 5H6l6 7-6 7h12"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 15l-5-5-9 9"/>',
 };
 
@@ -125,18 +126,22 @@ function countPills(c) {
 
 const mediaUrl = (name) => `api/media/${encodeURIComponent(name)}`;
 
-function mathElement(tex, display) {
-  const el = h('span', { class: display ? 'math display' : 'math' });
+function mathElement(tex, display, onclick) {
+  const el = h('span', { class: `math${display ? ' display' : ''}${onclick ? ' editable' : ''}`, title: onclick && 'Edit this maths', onclick });
   if (globalThis.katex) globalThis.katex.render(tex, el, { displayMode: display, throwOnError: false });
   else el.textContent = display ? `\\[${tex}\\]` : `\\(${tex}\\)`;
   return el;
 }
 
-/** The nodes that show a card side. */
-const rich = (text) =>
-  parseContent(text).map((part) => {
+/** The nodes that show a card side. With `editMath`, clicking the nth piece of maths calls `editMath(n)`. */
+const rich = (text, editMath) => {
+  let n = 0;
+  return parseContent(text).map((part) => {
     if (part.text !== undefined) return part.text;
-    if (part.math !== undefined) return mathElement(part.math, part.display);
+    if (part.math !== undefined) {
+      const index = n++;
+      return mathElement(part.math, part.display, editMath && (() => editMath(index)));
+    }
     return h('img', {
       class: 'card-image',
       src: mediaUrl(part.image),
@@ -145,6 +150,125 @@ const rich = (text) =>
       onerror: (e) => e.target.replaceWith(h('span', { class: 'image-missing' }, 'Image not found')),
     });
   });
+};
+
+// ---- Equation editor ------------------------------------------------------
+// MathLive, from vendor/mathlive/, loaded the first time it is needed. It shares KaTeX's fonts.
+
+let mathLive = null;
+
+function loadMathLive() {
+  mathLive ??= import('../vendor/mathlive/mathlive.min.mjs').then(({ MathfieldElement }) => {
+    MathfieldElement.fontsDirectory = new URL('../vendor/katex/fonts/', import.meta.url).href;
+    MathfieldElement.soundsDirectory = null;
+  });
+  mathLive.catch(() => (mathLive = null));
+  return mathLive;
+}
+
+// Shortcuts above the equation box. In each, #0 stands for what is selected and #? for an
+// empty slot to fill in.
+const matrix = (n) => `\\begin{bmatrix}${Array.from({ length: n }, () => Array(n).fill('#?').join('&')).join('\\\\')}\\end{bmatrix}`;
+const MATH_TOOLS = [
+  ['a/b', 'Fraction', '\\frac{#0}{#?}'],
+  ['√', 'Square root', '\\sqrt{#0}'],
+  ['xⁿ', 'Power', '#0^{#?}'],
+  ['xₙ', 'Subscript', '#0_{#?}'],
+  ['ẋ', 'Rate of change (dot)', '\\dot{#0}'],
+  ['v⃗', 'Vector arrow', '\\vec{#0}'],
+  ['2×2', '2 by 2 matrix', matrix(2)],
+  ['3×3', '3 by 3 matrix', matrix(3)],
+  ['4×4', '4 by 4 matrix', matrix(4)],
+];
+
+/**
+ * Open the equation editor on `math` (LaTeX), and call `onsave(math, display)` with the result.
+ * `display` is whether the maths sits on a line of its own.
+ */
+async function openMathDialog({ math = '', display = false, editing = false }, onsave) {
+  try {
+    await loadMathLive();
+  } catch {
+    toast('Could not load the equation editor.');
+    return;
+  }
+  const field = h('math-field', { class: 'math-input', 'aria-label': 'Equation' });
+  field.value = math;
+  const ownLine = h('input', { type: 'checkbox', checked: display });
+  const form = h(
+    'form',
+    {
+      onsubmit: (e) => {
+        e.preventDefault();
+        // An empty slot left in a fraction or power is written as a placeholder; drop it.
+        const latex = field
+          .getValue('latex-expanded')
+          .replace(/\\placeholder(?:\[[^\]]*\])?\{([^{}]*)\}/g, '$1')
+          .trim();
+        if (!latex) return field.focus();
+        // Close first: closing hands the focus back, and the text box should end up with it.
+        dialog.close();
+        onsave(latex, ownLine.checked);
+      },
+    },
+    h(
+      'div',
+      { class: 'math-tools', role: 'toolbar', 'aria-label': 'Insert' },
+      MATH_TOOLS.map(([text, title, latex]) =>
+        h(
+          'button',
+          {
+            class: 'btn sm',
+            type: 'button',
+            title,
+            'aria-label': title,
+            // Keep the focus, and so the selection, in the equation box.
+            onmousedown: (e) => e.preventDefault(),
+            onclick: () => {
+              field.insert(latex, { selectionMode: 'placeholder', focus: true });
+              field.focus();
+            },
+          },
+          text,
+        ),
+      ),
+    ),
+    field,
+    h('small', { class: 'field-note math-help' }, 'Type maths as it looks: / starts a fraction, ^ a power and _ a subscript, and the arrow keys move between the parts and between the cells of a matrix. Type sqrt, theta, omega, pi or sum by name. More is in the menu at the end of the box. On a phone, a maths keyboard opens.'),
+    h('label', { class: 'check' }, ownLine, 'On a line of its own, centred'),
+    h(
+      'div',
+      { class: 'modal-foot' },
+      h('button', { class: 'btn', type: 'button', onclick: () => dialog.close() }, 'Cancel'),
+      h('button', { class: 'btn primary', type: 'submit' }, editing ? 'Save' : 'Insert'),
+    ),
+  );
+  field.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+  // The dialog sits above the page, so the maths keyboard opens in a layer inside it, and
+  // the dialog moves to the top of the screen to stay clear of it.
+  const keyboard = globalThis.mathVirtualKeyboard;
+  const keyboardLayer = h('div', { class: 'math-keyboard' });
+  const placeDialog = () => dialog.element.classList.toggle('with-keyboard', keyboard.visible);
+  const dialog = modal(editing ? 'Edit maths' : 'Insert maths', form, {
+    narrow: true,
+    onclose: () => {
+      keyboard.hide();
+      keyboard.container = document.body;
+      keyboard.removeEventListener('geometrychange', placeDialog);
+      keyboard.removeEventListener('virtual-keyboard-toggle', placeDialog);
+    },
+  });
+  dialog.element.append(keyboardLayer);
+  keyboard.container = keyboardLayer;
+  keyboard.addEventListener('geometrychange', placeDialog);
+  keyboard.addEventListener('virtual-keyboard-toggle', placeDialog);
+  field.focus();
+}
 
 /** Keep an image on the server, returning the name a card refers to it by. */
 async function uploadImage(blob) {
@@ -282,7 +406,7 @@ function modal(title, content, { narrow = false, onclose } = {}) {
   dialog.addEventListener('close', finish);
   document.body.append(dialog);
   dialog.showModal();
-  return { close };
+  return { close, element: dialog };
 }
 
 function confirmDialog({ title, message, confirmLabel = 'Delete' }) {
@@ -416,24 +540,41 @@ function openDeckDialog(deck) {
   name.focus();
 }
 
-/** Put `text` where the cursor is in a text box, on a line of its own. */
-function insertAtCursor(textarea, text) {
-  const { selectionStart: start, selectionEnd: end, value } = textarea;
-  const before = start && value[start - 1] !== '\n' ? '\n' : '';
-  const after = end < value.length && value[end] !== '\n' ? '\n' : '';
+/**
+ * Put `text` in a text box in place of `start` to `end` (the selection unless given), on a line
+ * of its own when `ownLine` is set.
+ */
+function insertText(textarea, text, { start = textarea.selectionStart, end = textarea.selectionEnd, ownLine = false } = {}) {
+  const { value } = textarea;
+  const before = ownLine && start && value[start - 1] !== '\n' ? '\n' : '';
+  const after = ownLine && end < value.length && value[end] !== '\n' ? '\n' : '';
   textarea.setRangeText(before + text + after, start, end, 'end');
   textarea.focus();
+  textarea.dispatchEvent(new Event('input'));
 }
 
+const insertAtCursor = (textarea, text) => insertText(textarea, text, { ownLine: true });
+
 /**
- * The editor for one side of a card: its text box, a button and paste or drop to add images,
- * and a preview of the side once it holds maths or images.
+ * The editor for one side of a card: its text box, buttons to add maths and images, paste or
+ * drop for images, and a preview of the side once it holds maths or images. Clicking maths in
+ * the preview, or pressing Maths with the cursor in some, opens it in the equation editor.
  */
 function sideEditor(label, textarea) {
   const preview = h('div', { class: 'side-preview', 'aria-live': 'polite' });
+  const editMath = (span) =>
+    openMathDialog({ ...span, editing: true }, (math, display) =>
+      insertText(textarea, mathToken(math, display), { start: span.start, end: span.end, ownLine: display && !span.display }),
+    );
   const update = () => {
     preview.hidden = !hasRichContent(textarea.value);
-    if (!preview.hidden) preview.replaceChildren(...rich(textarea.value));
+    if (!preview.hidden) preview.replaceChildren(...rich(textarea.value, (n) => editMath(mathSpans(textarea.value)[n])));
+  };
+  const mathButton = () => {
+    const { selectionStart: start, selectionEnd: end } = textarea;
+    const inside = mathSpans(textarea.value).find((span) => span.start <= start && end <= span.end && start < span.end);
+    if (inside) return editMath(inside);
+    openMathDialog({}, (math, display) => insertText(textarea, mathToken(math, display), { start, end, ownLine: display }));
   };
   const isImage = (file) => file.type.startsWith('image/');
   const addImages = async (files) => {
@@ -441,7 +582,6 @@ function sideEditor(label, textarea) {
       const names = [];
       for (const file of files.filter(isImage)) names.push(await uploadImage(file));
       if (names.length) insertAtCursor(textarea, names.map(imageToken).join('\n'));
-      update();
     } catch (error) {
       toast(error.message || 'Could not add that image.');
     }
@@ -482,7 +622,12 @@ function sideEditor(label, textarea) {
       'div',
       { class: 'field-head' },
       h('span', null, label),
-      h('button', { class: 'btn ghost sm', type: 'button', title: `Add an image to the ${label.toLowerCase()}`, onclick: () => picker.click() }, icon('image'), 'Add image'),
+      h(
+        'div',
+        { class: 'field-tools' },
+        h('button', { class: 'btn ghost sm', type: 'button', title: `Write maths on the ${label.toLowerCase()}, or edit the maths at the cursor`, onclick: mathButton }, icon('sigma'), 'Maths'),
+        h('button', { class: 'btn ghost sm', type: 'button', title: `Add an image to the ${label.toLowerCase()}`, onclick: () => picker.click() }, icon('image'), 'Add image'),
+      ),
       picker,
     ),
     textarea,
@@ -538,7 +683,7 @@ function openCardDialog({ card, deckId }) {
     },
     sideEditor('Front', front),
     sideEditor('Back', back),
-    h('small', { class: 'field-note', style: 'margin: -6px 0 14px' }, 'Paste or drop images into a side. Write maths as \\( x^2 \\) within a line, or \\[ x^2 \\] on a line of its own.'),
+    h('small', { class: 'field-note', style: 'margin: -6px 0 14px' }, 'Paste or drop images into a side. Press Maths to write an equation, or click one in the preview to change it. Maths can also be typed as LaTeX: \\( x^2 \\) within a line, \\[ x^2 \\] on its own line.'),
     h('label', { class: 'field' }, h('span', null, 'Deck'), deckSelect),
     canReserve && h('label', { class: 'check' }, reserved, 'Keep on reserve, out of study until pulled in'),
     h(

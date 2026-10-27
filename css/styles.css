@@ -1041,6 +1041,10 @@ dialog.modal::backdrop {
   font-weight: 600;
   color: var(--muted);
 }
+.field-tools {
+  display: flex;
+  gap: 2px;
+}
 .btn.sm {
   height: 28px;
   padding: 0 9px;
@@ -1062,6 +1066,68 @@ dialog.modal::backdrop {
 }
 .side-preview .card-image {
   max-height: 220px;
+}
+.math.editable {
+  cursor: pointer;
+  border-radius: 4px;
+}
+.math.editable:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The equation editor. */
+math-field.math-input {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  --caret-color: var(--accent);
+  --selection-background-color: var(--accent-soft);
+  --contains-highlight-background-color: var(--accent-soft);
+}
+math-field.math-input:focus-within {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.math-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.math-tools .btn {
+  min-width: 40px;
+  justify-content: center;
+  font-family: 'KaTeX_Main', 'Times New Roman', serif;
+  font-size: 16px;
+}
+/* The maths keyboard fills this layer and sits at its foot; only the keys take clicks. */
+.math-keyboard {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+.math-keyboard .ML__keyboard {
+  pointer-events: none;
+}
+.math-keyboard .MLK__plate {
+  pointer-events: auto;
+}
+.modal.with-keyboard {
+  margin-top: 12px;
+  margin-bottom: auto;
+}
+.math-help {
+  margin: 0 0 12px;
 }
 
 .field-note {

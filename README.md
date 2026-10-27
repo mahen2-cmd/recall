@@ -10,7 +10,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 
 - **Decks and cards.** Create as many decks as you like; add, edit, move, search and delete cards.
 - **Filters.** Narrow a deck's card list to new, learning, due, not-yet-due or reserve cards, by when the next review falls, when a card was added or how often it was forgotten, and sort it. Tick cards, or everything the filters show, to delete them together.
-- **Maths and images.** Write formulas in LaTeX and they are typeset on the card. Paste a screenshot, drop a picture or pick a file to put it on either side.
+- **Maths and images.** Build equations in a visual editor, or write them in LaTeX, and they are typeset on the card. Paste a screenshot, drop a picture or pick a file to put it on either side.
 - **Import from Excel.** Turn a spreadsheet of words into cards in one step, pictures and maths included.
 - **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease, and its images and maths.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
@@ -20,7 +20,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 - **Read aloud.** A speaker button on each side of a card, a language for each side, optional auto-play, and an adjustable speaking speed. Maths and images are skipped. Audio is generated once per sentence and cached, unless a deck is set not to keep it.
 - **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day, and images to `data/media/`.
 - **Keyboard-first studying**, light and dark themes, and a layout that works on a phone.
-- **No dependencies to install.** The app is plain HTML, CSS and JavaScript; the server is one Node file. [KaTeX](https://katex.org), which typesets the maths, is included in `vendor/`, so maths works offline.
+- **No dependencies to install.** The app is plain HTML, CSS and JavaScript; the server is one Node file. [KaTeX](https://katex.org), which typesets the maths, and [MathLive](https://mathlive.io), the equation editor, are included in `vendor/`, so maths works offline.
 
 ## Quick start
 
@@ -85,7 +85,17 @@ Each deck has its own:
 
 ### Maths
 
-Write maths in LaTeX between these markers, on either side of a card:
+In the card editor, press **Maths** above a side to open the equation editor, and type the maths as it looks:
+
+- `/` starts a fraction, `^` a power and `_` a subscript. The arrow keys move out of them, and between the cells of a matrix.
+- Type `sqrt`, `theta`, `omega`, `pi`, `sum` and the like by name.
+- The buttons above the box insert a fraction, a square root, a power, a subscript, a dot (ẋ), a vector arrow, and 2×2, 3×3 and 4×4 matrices. The menu at the end of the box has more, including matrices of any size.
+- On a phone, a maths keyboard opens.
+- Tick **On a line of its own** to centre the maths on its own line, and press **Insert** or Enter.
+
+To change maths already on a card, click it in the preview under the text box, or put the cursor in it and press **Maths**.
+
+The editor writes LaTeX into the card, and you can also type LaTeX yourself between these markers:
 
 | Write | For |
 |---|---|
@@ -100,6 +110,8 @@ Back:  Through the Jacobian: \( \dot{x} = J(q)\,\dot{q} \)
 ```
 
 These are the markers Anki uses, so cards written for Anki work unchanged. A dollar sign is never taken for maths. The card editor shows a preview of a side as soon as it holds maths or an image, and a formula with a mistake in it is shown in red rather than hiding the card.
+
+The equation editor is [MathLive](https://mathlive.io), included in `vendor/` and loaded the first time it is opened.
 
 ### Images
 
@@ -236,6 +248,7 @@ js/app.js           the interface
 server.js           serves the app, reads and writes data/recall.json, and keeps images
 anki.js             reads an Anki package into decks and cards, with their images
 vendor/katex/       KaTeX 0.18.11, which typesets maths (MIT licence)
+vendor/mathlive/    MathLive 0.111.1, the equation editor, which uses KaTeX's fonts (MIT licence)
 tts.js              the voice engines and the audio cache
 tests/              unit tests for the scheduler, the store and the importers
 ```

@@ -21,6 +21,17 @@ export function parseContent(raw) {
   return parts;
 }
 
+/** Where each piece of maths sits in a side's text: `[{ start, end, math, display }]`. */
+export function mathSpans(raw) {
+  const text = String(raw ?? '');
+  return [...text.matchAll(TOKEN)]
+    .filter((m) => m[3] === undefined)
+    .map((m) => ({ start: m.index, end: m.index + m[0].length, math: (m[1] ?? m[2]).trim(), display: m[2] !== undefined }));
+}
+
+/** Maths as it is written on a card. */
+export const mathToken = (math, display) => (display ? `\\[ ${math} \\]` : `\\( ${math} \\)`);
+
 /** Whether a side holds anything other than plain text. */
 export const hasRichContent = (text) => parseContent(text).some((part) => part.text === undefined);
 

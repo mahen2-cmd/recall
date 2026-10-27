@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hasRichContent, imageNames, imageType, parseContent, speechText } from '../js/content.js';
+import { hasRichContent, imageNames, imageType, mathSpans, mathToken, parseContent, speechText } from '../js/content.js';
 import { PNG } from './zip.js';
 
 test('splits a side into text, maths and images', () => {
@@ -18,6 +18,17 @@ test('splits a side into text, maths and images', () => {
   assert.equal(hasRichContent('a \\(x\\)'), true);
   assert.equal(hasRichContent('a [b] (c)'), false);
   assert.deepEqual(imageNames('[image:a.png] x [image:b.gif]'), ['a.png', 'b.gif']);
+});
+
+test('finds where each piece of maths sits, to edit it in place', () => {
+  const text = 'v = \\( \\omega r \\) [image:a.png]\n\\[x\\]';
+  assert.deepEqual(mathSpans(text), [
+    { start: 4, end: 18, math: '\\omega r', display: false },
+    { start: 33, end: 38, math: 'x', display: true },
+  ]);
+  assert.equal(text.slice(4, 18), '\\( \\omega r \\)');
+  assert.equal(mathToken('x^2', false), '\\( x^2 \\)');
+  assert.equal(mathToken('x^2', true), '\\[ x^2 \\]');
 });
 
 test('reads aloud only the words, without maths or images', () => {
