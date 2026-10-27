@@ -1,5 +1,6 @@
 // Downloads the audio for both sides of every card, reserve included, into data/audio/, so
-// cards are read aloud straight from disk. Clips already saved are skipped, so it can be
+// cards are read aloud straight from disk. Maths and images are not read, and decks set not
+// to save their audio are left out. Clips already saved are skipped, so it can be
 // stopped at any time and run again to carry on. Run it with: npm run cache-voice
 // Options: --delay=<ms> sets the pause after each new clip (default 700), to go easy on the
 // voice service.
@@ -8,6 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { speechText } from '../js/content.js';
 import { DECK_DEFAULTS } from '../js/store.js';
 import { createTts } from '../tts.js';
 
@@ -27,9 +29,9 @@ export function speechRequests({ decks = [], cards = [] }) {
   const requests = [];
   for (const card of [...cards.filter((c) => !c.reserved), ...reserve]) {
     const deck = byId.get(card.deckId);
-    if (!deck) continue;
+    if (!deck?.saveAudio) continue;
     for (const side of ['front', 'back']) {
-      const text = String(card[side] ?? '').replace(/\s+/g, ' ').trim();
+      const text = speechText(card[side]);
       // A reversed card reads each side in the language of the deck's other side.
       const lang = deck[`${card.reversed ? (side === 'front' ? 'back' : 'front') : side}Lang`];
       const key = `${lang}\n${text}`;

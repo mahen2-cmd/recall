@@ -6,9 +6,10 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { zstdCompressSync } from 'node:zlib';
 
-import { htmlToText, readAnkiCollection, renderCard } from '../anki.js';
+import { htmlToText, readAnkiCollection, readAnkiPackage, renderCard } from '../anki.js';
 import { DAY, Rating, State, dayStart, daysElapsed, preview } from '../js/fsrs.js';
 import * as store from '../js/store.js';
+import { PNG, zip } from './zip.js';
 
 const NOW = new Date(2026, 9, 10, 13, 0, 0).getTime();
 const MADE = new Date(2025, 11, 5, 4, 0, 0); // when the Anki collection was created
@@ -260,7 +261,58 @@ test('rejects files that are not Anki collections', async () => {
 test('turns card HTML into plain text', () => {
   assert.equal(htmlToText('<div>Sou <strong>casado</strong> &mdash; male</div><div>Sou&nbsp;casada</div>'), 'Sou casado — male\nSou casada');
   assert.equal(htmlToText('<table><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></tbody></table>'), 'a b\nc');
-  assert.equal(htmlToText('<style>.x { color: red }</style>caf&eacute; &#233; [sound:a.mp3]<img src="a.png">'), 'caf&eacute; é');
+  assert.equal(htmlToText('<style>.x { color: red }</style>caf&eacute; &#233; [sound:a.mp3]'), 'caf&eacute; é');
+});
+
+test('keeps images as tokens naming the file, and maths as MathJax writes it', () => {
+  assert.equal(htmlToText('<div>Arm</div><div><img src="arm &amp; joint.png" alt=""></div>'), 'Arm\n[image:arm%20%26%20joint.png]');
+  assert.equal(htmlToText("<img class=x src='a.png'>"), '[image:a.png]');
+  assert.equal(htmlToText('\\(x &lt; y\\) and \\[\\theta\\]'), '\\(x < y\\) and \\[\\theta\\]');
+  assert.equal(htmlToText('[$]a^2[/$] then [$$]b[/$$]'), '\\(a^2\\) then \\[b\\]');
+});
+
+/** An Anki package holding the older layout, two cards with images and the images named. */
+function packageWithImages(mediaFile, files) {
+  const bytes = database((db) => {
+    db.exec('create table col (crt integer, conf text, models text, decks text, dconf text)');
+    const models = { [BASIC]: { id: BASIC, type: 0, flds: [{ name: 'Front', ord: 0 }, { name: 'Back', ord: 1 }], tmpls: [{ ord: 0, qfmt: '{{Front}}', afmt: BASIC_BACK }] } };
+    const decks = { [DECK]: { id: DECK, name: 'Robotics', conf: 1, dyn: 0 } };
+    db.prepare('insert into col values (?, ?, ?, ?, ?)').run(CRT, '{}', JSON.stringify(models), JSON.stringify(decks), '{}');
+    addCards(db, [
+      { id: 1790000000001, flds: 'Which joint?<br><img src="arm one.png">\x1fRevolute: \\(\\theta\\)' },
+      { id: 1790000000002, flds: '<img src="gone.png">\x1fNothing left on the front' },
+      { id: 1790000000003, flds: 'Same picture\x1f<img src="arm%20one.png">' },
+    ]);
+  });
+  return zip({ 'collection.anki2': bytes, media: mediaFile, ...files });
+}
+
+async function checkPackage(file) {
+  const saved = [];
+  const result = await readAnkiPackage(file, {
+    now: NOW,
+    saveImage: async (bytes) => {
+      saved.push(Buffer.from(bytes));
+      return 'stored.png';
+    },
+  });
+  assert.deepEqual(saved, [PNG]);
+  const cards = result.decks[0].cards.map(({ front, back }) => ({ front, back }));
+  assert.deepEqual(cards, [
+    { front: 'Which joint?\n[image:stored.png]', back: 'Revolute: \\(\\theta\\)' },
+    { front: 'Same picture', back: '[image:stored.png]' },
+  ]);
+  assert.equal(result.missingImages, 1);
+  assert.equal(result.blank, 1, 'a card whose front was only a missing image is left out');
+}
+
+test('stores the images of an older Anki package and points the cards at them', async () => {
+  await checkPackage(packageWithImages(JSON.stringify({ 0: 'arm one.png' }), { 0: PNG }));
+});
+
+test('reads the compressed list of images in a current Anki package', async () => {
+  const entries = blob([...tag(1, 2), 13, ...pbString(1, 'arm one.png')]);
+  await checkPackage(packageWithImages(zstdCompressSync(entries), { 0: zstdCompressSync(PNG) }));
 });
 
 test('fills in templates: conditional sections, hints and reversed cards', () => {

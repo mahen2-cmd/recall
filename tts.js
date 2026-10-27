@@ -8,11 +8,13 @@
 // to "azure", "google", "edge" or "piper" moves that one to the front.
 // Each side of a card has its own language. The "voice" in data/tts.json is used for its
 // own language; other languages get a default voice. Piper only speaks Portuguese.
-// Every sentence is generated once and then served from data/audio/.
+// Every sentence is generated once and then served from data/audio/, unless the deck asks
+// for its audio not to be kept: then it is made each time and thrown away after.
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const DEFAULT_VOICE = 'pt-PT-RaquelNeural';
@@ -191,16 +193,18 @@ export function createTts({ root, dataDir }) {
     return null;
   }
 
-  async function generate(text, lang) {
+  /** Audio for `text`, from the cache or made into `dir` (data/audio/ unless given). */
+  async function generate(text, lang, dir = audioDir) {
     const hash = createHash('sha256').update(text).digest('hex').slice(0, 32);
     // Use the best engine that works, so a failure or being offline still gives some audio.
     let failure;
     const list = await engines(lang);
     for (const { name, make } of list) {
-      const base = join(audioDir, name.replace(/[^\w.-]/g, '_'), hash);
+      const folder = name.replace(/[^\w.-]/g, '_');
       const preferred = name === list[0].name;
-      const hit = await cached(base);
+      const hit = await cached(join(audioDir, folder, hash));
       if (hit) return { file: hit, engine: name, preferred, fresh: false };
+      const base = join(dir, folder, hash);
       await mkdir(join(base, '..'), { recursive: true });
       try {
         return { file: await make(text, base), engine: name, preferred, fresh: true };
@@ -218,10 +222,11 @@ export function createTts({ root, dataDir }) {
    * choice rather than a fallback, and whether it was made just now.
    * `lang` is a language such as 'en-US'; without it the configured voice's language is used.
    */
-  async function prepare(raw, lang) {
+  async function prepare(raw, lang, dir) {
     const text = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT);
     if (!text) throw new Error('Nothing to say');
     if (lang && !/^[a-z]{2,3}(-[A-Z]{2})?$/.test(lang)) throw new Error('Unknown language');
+    if (dir) return generate(text, lang || undefined, dir);
     const key = `${lang ?? ''}\n${text}`;
     if (!inFlight.has(key)) {
       inFlight.set(key, generate(text, lang || undefined).finally(() => inFlight.delete(key)));
@@ -229,10 +234,22 @@ export function createTts({ root, dataDir }) {
     return inFlight.get(key);
   }
 
-  /** Audio for `text` as `{ body, type }`, generating and caching it if needed. */
-  async function speak(raw, lang) {
-    const { file } = await prepare(raw, lang);
-    return { body: await readFile(file), type: TYPES[file.slice(-3)] };
+  /**
+   * Audio for `text` as `{ body, type }`, generating it if needed. It is kept for next time
+   * unless `save` is false; audio kept before is still used either way.
+   */
+  async function speak(raw, lang, { save = true } = {}) {
+    if (save) {
+      const { file } = await prepare(raw, lang);
+      return { body: await readFile(file), type: TYPES[file.slice(-3)] };
+    }
+    const dir = await mkdtemp(join(tmpdir(), 'recall-tts-'));
+    try {
+      const { file } = await prepare(raw, lang, dir);
+      return { body: await readFile(file), type: TYPES[file.slice(-3)] };
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   }
 
   return { engine, prepare, speak };

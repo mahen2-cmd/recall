@@ -769,6 +769,51 @@ kbd {
   line-height: 1.5;
   animation: reveal 0.2s ease;
 }
+/* Maths and images on a card. */
+.math {
+  white-space: normal;
+}
+.katex-display {
+  margin: 0.4em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+.card-image {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+  max-height: 55vh;
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+.face .card-image {
+  margin: 6px 0;
+}
+.image-missing {
+  display: inline-block;
+  padding: 4px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+.card-row .card-image,
+.import-preview .card-image {
+  max-height: 2.6em;
+  border-radius: 4px;
+}
+.card-row .katex-display,
+.import-preview .katex-display {
+  display: inline;
+  margin: 0;
+}
+.card-row .katex-display > .katex,
+.import-preview .katex-display > .katex {
+  display: inline;
+}
+
 .speak {
   align-self: center;
   width: 38px;
@@ -984,6 +1029,41 @@ dialog.modal::backdrop {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.field-head span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.btn.sm {
+  height: 28px;
+  padding: 0 9px;
+  font-size: 13px;
+  gap: 5px;
+}
+.btn.sm .icon svg {
+  width: 15px;
+  height: 15px;
+}
+.side-preview {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.side-preview .card-image {
+  max-height: 220px;
+}
+
 .field-note {
   display: block;
   margin-top: -8px;

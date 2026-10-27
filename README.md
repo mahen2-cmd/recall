@@ -10,16 +10,17 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 
 - **Decks and cards.** Create as many decks as you like; add, edit, move, search and delete cards.
 - **Filters.** Narrow a deck's card list to new, learning, due, not-yet-due or reserve cards, by when the next review falls, when a card was added or how often it was forgotten, and sort it. Tick cards, or everything the filters show, to delete them together.
-- **Import from Excel.** Turn a spreadsheet of words into cards in one step.
-- **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease.
+- **Maths and images.** Write formulas in LaTeX and they are typeset on the card. Paste a screenshot, drop a picture or pick a file to put it on either side.
+- **Import from Excel.** Turn a spreadsheet of words into cards in one step, pictures and maths included.
+- **Import from Anki.** Bring in an `.apkg` file and carry on where you left off: every card keeps its due date, interval and ease, and its images and maths.
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
 - **A reserve.** Keep cards aside in a deck, out of study, and pull in as many as you like when you are ready for them, in an order you can rearrange. Fill it from a CSV or Excel file, or with reversed copies of cards you choose.
 - **Statistics.** A forecast of upcoming reviews, a year-long activity calendar, how many cards are new, learning, young and mature, and how often you press each answer button.
-- **Read aloud.** A speaker button on each side of a card, a language for each side, optional auto-play, and an adjustable speaking speed. Audio is generated once per sentence and cached.
-- **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day.
+- **Read aloud.** A speaker button on each side of a card, a language for each side, optional auto-play, and an adjustable speaking speed. Maths and images are skipped. Audio is generated once per sentence and cached, unless a deck is set not to keep it.
+- **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day, and images to `data/media/`.
 - **Keyboard-first studying**, light and dark themes, and a layout that works on a phone.
-- **No dependencies.** The app is plain HTML, CSS and JavaScript; the server is one Node file.
+- **No dependencies to install.** The app is plain HTML, CSS and JavaScript; the server is one Node file. [KaTeX](https://katex.org), which typesets the maths, is included in `vendor/`, so maths works offline.
 
 ## Quick start
 
@@ -78,6 +79,41 @@ Each deck has its own:
 - **Auto-play audio**: off, front, back or both sides.
 - **Front language** and **Back language** (default English (US) and Portuguese): the language each side is read in.
 - **Speaking speed**, from normal down to very slow.
+- **Keep the audio made for this deck** (on by default). Turn it off for decks that are mostly maths: audio is then made each time a side is played and thrown away after, and `npm run cache-voice` leaves the deck out.
+
+## Maths and images
+
+### Maths
+
+Write maths in LaTeX between these markers, on either side of a card:
+
+| Write | For |
+|---|---|
+| `\( ... \)` | maths within a line of text |
+| `\[ ... \]` | maths on a line of its own, centred |
+
+For example:
+
+```
+Back:  \[ R_z(\theta) = \begin{bmatrix} \cos\theta & -\sin\theta & 0 \\ \sin\theta & \cos\theta & 0 \\ 0 & 0 & 1 \end{bmatrix} \]
+Back:  Through the Jacobian: \( \dot{x} = J(q)\,\dot{q} \)
+```
+
+These are the markers Anki uses, so cards written for Anki work unchanged. A dollar sign is never taken for maths. The card editor shows a preview of a side as soon as it holds maths or an image, and a formula with a mistake in it is shown in red rather than hiding the card.
+
+### Images
+
+In the card editor, put an image on a side in any of these ways:
+
+- **Paste** it into the side's text box, for example a screenshot copied from a page of a book.
+- **Drop** an image file onto the text box.
+- Press **Add image** above the text box and choose one or more files.
+
+PNG, JPEG, GIF, WebP and SVG images up to 20 MB are accepted. Each is kept in `data/media/` and appears in the text box as `[image:...]`, which you can move about like any other text or delete to take the image off the card. The same picture added twice is only kept once. Images are kept by the server, so they need the app to be started with `npm start`.
+
+### Reading aloud
+
+Only a side's words are read: maths and images are skipped, and a side with nothing else on it has no speaker button.
 
 ## The reserve
 
@@ -111,6 +147,8 @@ Open a deck and press **Import**, then choose a file. Each row becomes one card.
 - **Header row:** tick the box if the first row holds column titles.
 - **Duplicates:** rows whose front is already in the deck are skipped, so the same file can be imported again after you add to it.
 - **Preview:** the dialog shows the first cards and how many rows will be skipped before anything is added.
+- **Maths:** cells can hold maths written with `\( ... \)` and `\[ ... \]`, as on any card.
+- **Pictures:** a picture placed in a cell (**Insert → Pictures → Place in Cell** in Excel) goes on that side of the card. So does a picture floating over the sheet, by the cell under its top-left corner; in LibreOffice, anchor it **To Cell**. Pictures Recall cannot show, such as drawings Excel saves as EMF, are left out, and the app says how many.
 
 Only the first sheet of a workbook is read, and rows missing either a front or a back are left out. Imported cards are new cards, in the order they appear in the file.
 
@@ -127,7 +165,7 @@ Each Anki deck becomes a Recall deck, and each card arrives exactly where it was
 
 Some things do not come across:
 
-- Cards become plain text. Formatting, images and audio are dropped, and suspended cards are left out.
+- Cards become plain text with their images and maths. Formatting and audio are dropped, and suspended cards are left out. Maths written for Anki's MathJax (`\(...\)` and `\[...\]`) is kept as it is, and Anki's `[$]...[/$]` and `[$$]...[/$$]` become the same. Images are copied into `data/media/` as soon as the file is read, before the import is confirmed.
 - Recall has no setting for custom learning steps, starting ease, easy bonus and the like. If a deck changes these in Anki, the dialog says which, and Recall uses Anki's defaults for them.
 - The review history itself is not kept, only the schedule it led to.
 
@@ -146,7 +184,7 @@ The speaker reads each side of a card in the language set for it in the deck's s
 
 The Google Translate and Edge engines use addresses those companies do not publish for this purpose, so either could stop working without notice. When one fails, the next engine takes over. If the Edge voice breaks, running `npm run setup-voice` again updates it.
 
-To have every card ready to be read aloud, reserve included, run `npm run cache-voice`. It saves the audio for both sides of each card ahead of time, so studying never waits on the voice engine or needs the internet. Clips already saved are skipped, so it can be stopped at any time and run again to carry on, or to fetch the cards added since. It pauses after each new clip to go easy on the engine (`npm run cache-voice -- --delay=1500` to pause longer), and stops if the first-choice engine stops answering rather than filling in with a fallback voice.
+To have every card ready to be read aloud, reserve included, run `npm run cache-voice`. Decks set not to keep their audio are left out. It saves the audio for both sides of each card ahead of time, so studying never waits on the voice engine or needs the internet. Clips already saved are skipped, so it can be stopped at any time and run again to carry on, or to fetch the cards added since. It pauses after each new clip to go easy on the engine (`npm run cache-voice -- --delay=1500` to pause longer), and stops if the first-choice engine stops answering rather than filling in with a fallback voice.
 
 To change the engine or voice, create `data/tts.json`. Every field is optional:
 
@@ -172,12 +210,14 @@ Changes take effect on the next sentence played; no restart is needed.
 | `data/recall.json` | Every deck, card and its learning progress |
 | `data/backups/` | A copy from the start of each day you used the app; the last 30 are kept |
 | `data/audio/` | Cached audio, one file per sentence per voice |
+| `data/media/` | The images on cards, named by their contents |
 | `data/tts.json` | Voice settings and keys, if you created it |
 
 The `data/` folder is git-ignored, so none of it is ever committed.
 
 - To keep the data somewhere else, such as a synced folder, start with `RECALL_DATA=/path/to/folder npm start`.
-- The download and upload buttons in the top bar export and import everything as one JSON file.
+- The download and upload buttons in the top bar export and import everything as one JSON file. Images are not in that file; copy `data/media/` with it.
+- Deleting a card or deck leaves its images in `data/media/`, as other cards may show the same ones.
 - The top bar shows where data is going. If the server stops while the tab is open, it warns you; changes are held in the browser and written to the file when the server is back.
 - Use one tab at a time. Two open tabs overwrite each other's changes.
 
@@ -190,10 +230,12 @@ index.html          the page
 css/styles.css      all styling, light and dark
 js/fsrs.js          the scheduler: Anki's SM-2 and FSRS-6 modes, with no browser code
 js/store.js         decks, cards, the study queue and saving
-js/importer.js      reads .xlsx and CSV files into rows
+js/content.js       finds the maths and images in a card's text, and the words to read aloud
+js/importer.js      reads .xlsx and CSV files into rows, with their pictures
 js/app.js           the interface
-server.js           serves the app and reads and writes data/recall.json
-anki.js             reads an Anki collection into decks and cards
+server.js           serves the app, reads and writes data/recall.json, and keeps images
+anki.js             reads an Anki package into decks and cards, with their images
+vendor/katex/       KaTeX 0.18.11, which typesets maths (MIT licence)
 tts.js              the voice engines and the audio cache
 tests/              unit tests for the scheduler, the store and the importers
 ```
@@ -213,4 +255,4 @@ npm test
 - Easy on a new card gives exactly the easy interval; Anki varies it by a day either way.
 - FSRS uses its default parameters; they are not optimised from your review history.
 - There is no load balancer and no review limit per day, and cards have no templates.
-- Cards are plain text.
+- Cards are plain text, with maths and images. Maths is typeset with KaTeX rather than MathJax, which covers nearly all the same LaTeX.

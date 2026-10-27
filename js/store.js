@@ -13,6 +13,8 @@ const KEY = 'recall.v1';
 //   frontLang     language the front is read in, such as 'en-US'
 //   backLang      language the back is read in
 //   speechRate    playback speed of that audio, where 1 is the voice's natural pace
+//   saveAudio     whether the server keeps the audio it makes for the deck's cards; off, it
+//                 is made each time it is played, and `npm run cache-voice` leaves the deck out
 // A deck imported from Anki may also carry `fsrsParams`, its own FSRS parameters.
 export const DECK_DEFAULTS = {
   scheduler: 'sm2',
@@ -23,6 +25,7 @@ export const DECK_DEFAULTS = {
   frontLang: 'en-US',
   backLang: 'pt-PT',
   speechRate: 0.8,
+  saveAudio: true,
 };
 
 // `daily` counts the answers given on each day. `log` breaks the same answers down:

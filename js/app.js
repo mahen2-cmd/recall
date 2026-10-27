@@ -1,5 +1,6 @@
+import { hasRichContent, imageToken, parseContent, speechText } from './content.js';
 import { DAY, MINUTE, Rating, State, dayStart } from './fsrs.js';
-import { ankiCollection, parseSpreadsheet } from './importer.js';
+import { parseSpreadsheet } from './importer.js';
 import * as store from './store.js';
 
 const app = document.getElementById('app');
@@ -68,6 +69,7 @@ const ICONS = {
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   swap: '<path d="M7 4L3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/>',
+  image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 15l-5-5-9 9"/>',
 };
 
 function icon(name) {
@@ -117,8 +119,44 @@ function countPills(c) {
   return h('div', { class: 'counts' }, pill('new', c.new, 'New'), pill('learning', c.learning, 'Learning'), pill('review', c.review, 'Due'));
 }
 
+// ---- Card content ---------------------------------------------------------
+// A side's text, with its maths typeset by KaTeX (loaded by index.html from vendor/katex/)
+// and its images shown from the server.
+
+const mediaUrl = (name) => `api/media/${encodeURIComponent(name)}`;
+
+function mathElement(tex, display) {
+  const el = h('span', { class: display ? 'math display' : 'math' });
+  if (globalThis.katex) globalThis.katex.render(tex, el, { displayMode: display, throwOnError: false });
+  else el.textContent = display ? `\\[${tex}\\]` : `\\(${tex}\\)`;
+  return el;
+}
+
+/** The nodes that show a card side. */
+const rich = (text) =>
+  parseContent(text).map((part) => {
+    if (part.text !== undefined) return part.text;
+    if (part.math !== undefined) return mathElement(part.math, part.display);
+    return h('img', {
+      class: 'card-image',
+      src: mediaUrl(part.image),
+      alt: '',
+      loading: 'lazy',
+      onerror: (e) => e.target.replaceWith(h('span', { class: 'image-missing' }, 'Image not found')),
+    });
+  });
+
+/** Keep an image on the server, returning the name a card refers to it by. */
+async function uploadImage(blob) {
+  if (!store.storageInfo().available) throw new Error('Images are kept by the Recall server. Start it with "npm start".');
+  const res = await fetch('api/media', { method: 'POST', body: blob });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()).name;
+}
+
 // ---- Speech ---------------------------------------------------------------
-// Uses the server's voice when there is one, otherwise the browser's own.
+// Uses the server's voice when there is one, otherwise the browser's own. Only a side's words
+// are read: its maths and images are skipped.
 
 const LANGUAGES = [
   ['pt-PT', 'Portuguese (Portugal)'],
@@ -128,7 +166,7 @@ const LANGUAGES = [
 let player = null;
 let speechToken = 0;
 
-const ttsUrl = (text, lang) => `api/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}`;
+const ttsUrl = (text, lang, save = true) => `api/tts?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}${save ? '' : '&save=0'}`;
 const serverVoice = () => store.storageInfo().voice;
 const canSpeak = () => Boolean(serverVoice()) || 'speechSynthesis' in window;
 
@@ -139,7 +177,8 @@ function stopSpeaking() {
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
 
-async function speak(text, lang, rate = 1) {
+/** Read `text` aloud. With `save` false, the server makes the audio without keeping it. */
+async function speak(text, lang, rate = 1, save = true) {
   stopSpeaking();
   if (!text.trim()) return;
   if (!serverVoice()) {
@@ -152,7 +191,7 @@ async function speak(text, lang, rate = 1) {
   }
   const token = speechToken;
   try {
-    const res = await fetch(ttsUrl(text, lang));
+    const res = await fetch(ttsUrl(text, lang, save));
     if (!res.ok) throw new Error(await res.text());
     const url = URL.createObjectURL(await res.blob());
     if (token !== speechToken) return; // moved on while the audio was loading
@@ -177,20 +216,26 @@ function prepareSpeech(text, lang) {
 const deckSide = (card, side) => (card.reversed ? (side === 'front' ? 'back' : 'front') : side);
 const sideLang = (card, deck, side) => deck[`${deckSide(card, side)}Lang`];
 
-/** Read one side of a card aloud, in that side's language. */
-const speakSideOf = (card, deck, side) => speak(card[side], sideLang(card, deck, side), deck.speechRate);
+/** Read the words on one side of a card aloud, in that side's language. */
+const speakSideOf = (card, deck, side) => speak(speechText(card[side]), sideLang(card, deck, side), deck.speechRate, deck.saveAudio);
 
 const speaksSide = (card, deck, side) => deck.speak === deckSide(card, side) || deck.speak === 'both';
+
+/** Make a side's audio ahead of time, unless its deck keeps no audio to play later. */
+function prepareSideSpeech(card, deck, side) {
+  if (deck.saveAudio) prepareSpeech(speechText(card[side]), sideLang(card, deck, side));
+}
 
 function prepareCardSpeech(card) {
   const deck = store.deck(card.deckId);
   for (const side of ['front', 'back']) {
-    if (speaksSide(card, deck, side)) prepareSpeech(card[side], sideLang(card, deck, side));
+    if (speaksSide(card, deck, side)) prepareSideSpeech(card, deck, side);
   }
 }
 
 const speakButton = (card, deck, side) =>
   canSpeak() &&
+  speechText(card[side]) !== '' &&
   h('button', { class: 'speak', type: 'button', title: `Listen to the ${side} (R)`, 'aria-label': `Listen to the ${side}`, onclick: () => speakSideOf(card, deck, side) }, icon('speaker'));
 
 // ---- Theme ----------------------------------------------------------------
@@ -302,6 +347,7 @@ function openDeckDialog(deck) {
       h('option', { value, selected: value === defaults.speechRate }, label),
     ),
   );
+  const saveAudio = h('input', { type: 'checkbox', checked: defaults.saveAudio });
 
   const form = h(
     'form',
@@ -318,6 +364,7 @@ function openDeckDialog(deck) {
           frontLang: frontLang.value,
           backLang: backLang.value,
           speechRate: Number(speechRate.value),
+          saveAudio: saveAudio.checked,
         };
         if (!values.name) return name.focus();
         if (deck) store.updateDeck(deck.id, values);
@@ -352,7 +399,11 @@ function openDeckDialog(deck) {
         h('label', { class: 'field' }, h('span', null, 'Front language'), frontLang),
         h('label', { class: 'field' }, h('span', null, 'Back language'), backLang),
       ),
-      h('small', { class: 'field-note' }, 'Auto-play reads a side aloud when it appears, in that side’s language. You can always play either side with its speaker button.'),
+      h('small', { class: 'field-note' }, 'Auto-play reads a side aloud when it appears, in that side’s language. You can always play either side with its speaker button. Maths and images are skipped.'),
+      serverVoice() && [
+        h('label', { class: 'check', style: 'margin-top: 12px' }, saveAudio, 'Keep the audio made for this deck'),
+        h('small', { class: 'field-note' }, 'Turn this off for decks that are mostly maths: audio is then made each time it plays instead of being kept, and “npm run cache-voice” leaves the deck out.'),
+      ],
     ],
     h(
       'div',
@@ -363,6 +414,80 @@ function openDeckDialog(deck) {
   );
   const dialog = modal(deck ? 'Deck settings' : 'New deck', form, { narrow: true, onclose: render });
   name.focus();
+}
+
+/** Put `text` where the cursor is in a text box, on a line of its own. */
+function insertAtCursor(textarea, text) {
+  const { selectionStart: start, selectionEnd: end, value } = textarea;
+  const before = start && value[start - 1] !== '\n' ? '\n' : '';
+  const after = end < value.length && value[end] !== '\n' ? '\n' : '';
+  textarea.setRangeText(before + text + after, start, end, 'end');
+  textarea.focus();
+}
+
+/**
+ * The editor for one side of a card: its text box, a button and paste or drop to add images,
+ * and a preview of the side once it holds maths or images.
+ */
+function sideEditor(label, textarea) {
+  const preview = h('div', { class: 'side-preview', 'aria-live': 'polite' });
+  const update = () => {
+    preview.hidden = !hasRichContent(textarea.value);
+    if (!preview.hidden) preview.replaceChildren(...rich(textarea.value));
+  };
+  const isImage = (file) => file.type.startsWith('image/');
+  const addImages = async (files) => {
+    try {
+      const names = [];
+      for (const file of files.filter(isImage)) names.push(await uploadImage(file));
+      if (names.length) insertAtCursor(textarea, names.map(imageToken).join('\n'));
+      update();
+    } catch (error) {
+      toast(error.message || 'Could not add that image.');
+    }
+  };
+  const picker = h('input', {
+    type: 'file',
+    accept: 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml',
+    multiple: true,
+    hidden: true,
+    onchange: () => {
+      addImages([...picker.files]);
+      picker.value = '';
+    },
+  });
+  textarea.setAttribute('aria-label', label);
+  textarea.addEventListener('input', update);
+  textarea.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files ?? [])].filter(isImage);
+    if (!files.length) return;
+    e.preventDefault();
+    addImages(files);
+  });
+  textarea.addEventListener('dragover', (e) => {
+    if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+  });
+  textarea.addEventListener('drop', (e) => {
+    const files = [...(e.dataTransfer?.files ?? [])].filter(isImage);
+    if (!files.length) return;
+    e.preventDefault();
+    textarea.focus();
+    addImages(files);
+  });
+  update();
+  return h(
+    'div',
+    { class: 'field' },
+    h(
+      'div',
+      { class: 'field-head' },
+      h('span', null, label),
+      h('button', { class: 'btn ghost sm', type: 'button', title: `Add an image to the ${label.toLowerCase()}`, onclick: () => picker.click() }, icon('image'), 'Add image'),
+      picker,
+    ),
+    textarea,
+    preview,
+  );
 }
 
 function openCardDialog({ card, deckId }) {
@@ -404,14 +529,16 @@ function openCardDialog({ card, deckId }) {
         // Stay open so several cards can be added in a row.
         prepareCardSpeech(store.addCard(deckSelect.value, values.front, values.back, Date.now(), { reserved: reserved.checked }));
         front.value = back.value = '';
+        for (const box of [front, back]) box.dispatchEvent(new Event('input'));
         note.textContent = reserved.checked ? 'Card added to the reserve' : 'Card added';
         note.className = 'note ok';
         front.focus();
         render();
       },
     },
-    h('label', { class: 'field' }, h('span', null, 'Front'), front),
-    h('label', { class: 'field' }, h('span', null, 'Back'), back),
+    sideEditor('Front', front),
+    sideEditor('Back', back),
+    h('small', { class: 'field-note', style: 'margin: -6px 0 14px' }, 'Paste or drop images into a side. Write maths as \\( x^2 \\) within a line, or \\[ x^2 \\] on a line of its own.'),
     h('label', { class: 'field' }, h('span', null, 'Deck'), deckSelect),
     canReserve && h('label', { class: 'check' }, reserved, 'Keep on reserve, out of study until pulled in'),
     h(
@@ -517,6 +644,26 @@ function planImport(rows, { front, back, header, skipExisting, existing }) {
   return plan;
 }
 
+/**
+ * Keep the pictures read from a spreadsheet on the server, and point the cells at the stored
+ * copies. A picture the server will not take, such as a drawing saved by Excel as EMF, is left
+ * out, as are all of them without a server. Returns the rows and how many pictures were left out.
+ */
+async function storeSheetImages(rows, images) {
+  const stored = new Map();
+  for (const [path, bytes] of images) {
+    stored.set(path, store.storageInfo().available ? await uploadImage(new Blob([bytes])).catch(() => null) : null);
+  }
+  const cells = rows.map((row) =>
+    row.map((cell) =>
+      cell
+        .replace(/\[image:([^\]\s]+)\]/g, (_, path) => (stored.get(path) ? imageToken(stored.get(path)) : ''))
+        .trim(),
+    ),
+  );
+  return { rows: cells, skipped: [...stored.values()].filter((name) => !name).length };
+}
+
 function pickImportFile(deck, toReserve = false) {
   const input = h('input', {
     type: 'file',
@@ -525,8 +672,15 @@ function pickImportFile(deck, toReserve = false) {
       const file = input.files[0];
       if (!file) return;
       try {
-        const rows = await parseSpreadsheet(await file.arrayBuffer(), file.name);
+        const images = new Map();
+        let rows = await parseSpreadsheet(await file.arrayBuffer(), file.name, images);
         if (!rows.length) throw new Error('That file has no rows to import.');
+        if (images.size) {
+          const result = await storeSheetImages(rows, images);
+          rows = result.rows;
+          if (!store.storageInfo().available) toast('Pictures are kept by the Recall server, so they will be left out. Start it with "npm start" to import them.');
+          else if (result.skipped) toast(`${plural(result.skipped, 'picture')} in a format Recall cannot show will be left out`);
+        }
         openImportDialog(deck, file.name, rows, toReserve);
       } catch (error) {
         toast(error.message || 'Could not read that file.');
@@ -545,7 +699,8 @@ function openImportDialog(deck, fileName, rows, toReserve = false) {
       { onchange: () => update() },
       Array.from({ length: width }, (_, i) => {
         const sample = rows.find((row) => row[i])?.[i] ?? 'empty';
-        const label = `${columnName(i)}: ${sample.length > 28 ? `${sample.slice(0, 28)}…` : sample}`;
+        const words = sample.replace(/\[image:[^\]\s]+\]/g, '(image)');
+        const label = `${columnName(i)}: ${words.length > 28 ? `${words.slice(0, 28)}…` : words}`;
         return h('option', { value: i, selected: i === selected }, label);
       }),
     );
@@ -574,7 +729,7 @@ function openImportDialog(deck, fileName, rows, toReserve = false) {
       'table',
       null,
       h('thead', null, h('tr', null, h('th', null, 'Front'), h('th', null, 'Back'))),
-      h('tbody', null, cards.slice(0, 5).map(([f, b]) => h('tr', null, h('td', null, f), h('td', null, b)))),
+      h('tbody', null, cards.slice(0, 5).map(([f, b]) => h('tr', null, h('td', null, rich(f)), h('td', null, rich(b))))),
     );
     const more = cards.length > 5 ? [h('div', { class: 'import-more' }, `and ${cards.length - 5} more`)] : [];
     preview.replaceChildren(table, ...more);
@@ -641,7 +796,8 @@ function pickAnkiFile() {
       const file = input.files[0];
       if (!file) return;
       try {
-        const res = await fetch('api/anki', { method: 'POST', body: await ankiCollection(await file.arrayBuffer()) });
+        // The whole package goes, as the server stores the images the cards show.
+        const res = await fetch('api/anki', { method: 'POST', body: file });
         if (!res.ok) throw new Error(await res.text());
         openAnkiDialog(file.name, await res.json());
       } catch (error) {
@@ -652,7 +808,7 @@ function pickAnkiFile() {
   input.click();
 }
 
-function openAnkiDialog(fileName, { decks, suspended, blank, media }) {
+function openAnkiDialog(fileName, { decks, suspended, blank, sound, missingImages }) {
   const known = store.ankiCardIds();
   const incoming = decks
     .map((deck) => ({ ...deck, cards: deck.cards.filter((card) => !known.has(card.ankiId)) }))
@@ -675,7 +831,8 @@ function openAnkiDialog(fileName, { decks, suspended, blank, media }) {
     existing && `${plural(existing, 'card')} already in Recall will be skipped.`,
     suspended && `${plural(suspended, 'suspended card')} will be left out.`,
     blank && `${plural(blank, 'card')} with no text on the front will be left out.`,
-    media && 'Images and audio are not imported. Cards are plain text.',
+    sound && 'Audio is not imported. Images and maths are.',
+    missingImages && `${plural(missingImages, 'image')} named on cards ${missingImages === 1 ? 'is' : 'are'} missing from the file or in a format Recall cannot show, and will be left out.`,
     ...incoming
       .filter((deck) => deck.custom.length)
       .map((deck) => `“${deck.name}” has its own ${deck.custom.join(', ')} in Anki. Recall uses Anki’s defaults for these, so some intervals will differ.`),
@@ -1115,8 +1272,8 @@ function renderDeck(deck) {
               sortable && h('span', { class: 'grip', title: 'Drag to reorder' }, icon('grip')),
               h('input', { type: 'checkbox', 'aria-label': 'Select card', checked: selected.has(card.id), onchange: (e) => pick([card.id], e.target.checked) }),
             ),
-            h('div', { class: 'text' }, card.front),
-            h('div', { class: 'text back-text' }, card.back),
+            h('div', { class: 'text' }, rich(card.front)),
+            h('div', { class: 'text back-text' }, rich(card.back)),
             h('span', { class: `pill ${status.kind} due`, style: 'justify-self: start' }, status.label),
             h(
               'div',
@@ -1271,7 +1428,7 @@ function renderStudy(deck) {
     const side = session.revealed ? 'back' : 'front';
     if (speaksSide(card, deck, side)) speakSideOf(card, deck, side);
     else stopSpeaking();
-    if (!session.revealed && speaksSide(card, deck, 'back')) prepareSpeech(card.back, sideLang(card, deck, 'back'));
+    if (!session.revealed && speaksSide(card, deck, 'back')) prepareSideSpeech(card, deck, 'back');
   }
 
   app.replaceChildren(
@@ -1289,9 +1446,9 @@ function renderStudy(deck) {
           iconButton('edit', 'Edit card (E)', () => openCardDialog({ card })),
           iconButton('trash', 'Delete card', () => removeCard(card), 'danger'),
         ),
-        h('div', { class: 'face question' }, card.front),
+        h('div', { class: 'face question' }, rich(card.front)),
         speakButton(card, deck, 'front'),
-        session.revealed && [h('hr'), h('div', { class: 'face answer' }, card.back), speakButton(card, deck, 'back')],
+        session.revealed && [h('hr'), h('div', { class: 'face answer' }, rich(card.back)), speakButton(card, deck, 'back')],
       ),
       h(
         'div',

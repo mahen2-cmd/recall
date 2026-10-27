@@ -2,12 +2,15 @@
 // keeping every card where it was in Anki's schedule.
 // Both of Anki's file layouts are read: the older one, which keeps decks and note types as
 // JSON, and the current one, which keeps them in their own tables as protobuf.
+// Images in the package are stored with the cards; maths written for Anki's MathJax is kept.
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { imageToken } from './js/content.js';
 import { DAY, LEARN_STEPS, MAX_INTERVAL, RELEARN_STEPS, State, dayStart, newSchedule, nextMemory } from './js/fsrs.js';
+import { readZip } from './js/importer.js';
 
 // ---- Protobuf ---------------------------------------------------------------
 
@@ -217,7 +220,8 @@ function readCurrent(all) {
 
 // ---- Card text --------------------------------------------------------------
 // Anki builds each side from a template and the note's fields, as HTML. Recall cards are
-// plain text, so the template is filled in and the markup taken out.
+// plain text, so the template is filled in and the markup taken out. An image becomes an
+// [image:...] token naming the file in the package, swapped later for the stored copy.
 
 const ENTITIES = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—',
@@ -231,15 +235,21 @@ const decodeEntities = (s) =>
     return point <= 0x10ffff ? String.fromCodePoint(point) : match;
   });
 
+const IMAGE = /<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi;
+
 export function htmlToText(html) {
   const text = html
     .replace(/<(style|script)\b[\s\S]*?<\/\1>/gi, '')
     .replace(/\[sound:[^\]]*\]/g, '')
+    .replace(IMAGE, (_, a, b, c) => imageToken(encodeURIComponent(decodeEntities(a ?? b ?? c))))
     .replace(/\r?\n/g, ' ')
     .replace(/<br\b[^>]*>|<hr\b[^>]*>|<\/(div|p|li|tr|h[1-6]|blockquote)>/gi, '\n')
     .replace(/<\/(td|th)>/gi, ' ')
     .replace(/<[^>]*>/g, '');
   return decodeEntities(text)
+    // Anki's other way of writing maths, typeset with LaTeX, in the form MathJax uses.
+    .replace(/\[\$\$\]([\s\S]*?)\[\/\$\$\]/g, '\\[$1\\]')
+    .replace(/\[\$\]([\s\S]*?)\[\/\$\]/g, '\\($1\\)')
     .replace(/[ \t ]+/g, ' ')
     .replace(/ ?\n ?/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -374,7 +384,7 @@ function cardSchedule(row, history, { fsrs, w, dayAt }) {
   };
 }
 
-// ---- Entry point ------------------------------------------------------------
+// ---- Converting -------------------------------------------------------------
 
 const groupBy = (rows, key) => {
   const groups = new Map();
@@ -406,7 +416,7 @@ function convert(all, now) {
        from cards c join notes n on n.id = c.nid order by c.id`,
   );
 
-  const result = { decks: [], suspended: 0, blank: 0, media: false };
+  const result = { decks: [], suspended: 0, blank: 0, sound: false, missingImages: 0 };
   const byDeck = groupBy(rows.map((row) => ({ ...row, deck: row.odid || row.did })), 'deck');
   for (const deck of source.decks) {
     const options = withDefaults(deck.options);
@@ -423,7 +433,7 @@ function convert(all, now) {
         result.blank++;
         continue;
       }
-      if (/<img\b|\[sound:/i.test(row.flds)) result.media = true;
+      if (/\[sound:/i.test(row.flds)) result.sound = true;
       cards.push({
         ankiId: row.id,
         front,
@@ -449,13 +459,69 @@ function convert(all, now) {
   return result;
 }
 
+// ---- Images -----------------------------------------------------------------
+
+const PACKAGE_IMAGE = /\[image:([^\]\s]+)\]/g;
+
+const decodeName = (name) => {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name;
+  }
+};
+
+/**
+ * Swap each image token naming a file in the package for the stored copy, using
+ * `store(names)`, which returns a map of package names to stored names. Images it could not
+ * store are left out, and so are cards left with nothing on the front.
+ */
+async function storeImages(result, store) {
+  const names = new Set();
+  for (const deck of result.decks) {
+    for (const card of deck.cards) {
+      for (const side of [card.front, card.back]) for (const m of side.matchAll(PACKAGE_IMAGE)) names.add(decodeName(m[1]));
+    }
+  }
+  if (!names.size) return;
+  const stored = await store([...names]);
+  result.missingImages = [...names].filter((name) => !stored.has(name)).length;
+  const swap = (text) =>
+    text
+      .replace(PACKAGE_IMAGE, (_, name) => (stored.has(decodeName(name)) ? imageToken(stored.get(decodeName(name))) : ''))
+      .replace(/[ \t]+\n|\n[ \t]+/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  for (const deck of result.decks) {
+    const before = deck.cards.length;
+    deck.cards = deck.cards.filter((card) => {
+      card.front = swap(card.front);
+      card.back = swap(card.back);
+      return card.front !== '';
+    });
+    result.blank += before - deck.cards.length;
+  }
+  result.decks = result.decks.filter((deck) => deck.cards.length);
+}
+
+// ---- Entry points -----------------------------------------------------------
+
 const ZSTD = [0x28, 0xb5, 0x2f, 0xfd];
+const isZstd = (bytes) => ZSTD.every((byte, i) => bytes[i] === byte);
+
+async function unzstd(bytes) {
+  const { zstdDecompressSync } = await import('node:zlib');
+  if (!zstdDecompressSync) throw new Error('This Anki file needs Node.js 22.15 or newer to open.');
+  return zstdDecompressSync(bytes);
+}
 
 /**
  * Decks and cards from the bytes of an Anki collection database:
- * `{ decks: [{ ankiId, name, settings, custom, cards }], suspended, blank, media }`.
+ * `{ decks: [{ ankiId, name, settings, custom, cards }], suspended, blank, sound, missingImages }`.
+ * `storeImagesFor(names)` keeps the images the cards show, given their names in the package,
+ * and returns a map of those names to stored ones. Without it, images are left out.
  */
-export async function readAnkiCollection(bytes, now = Date.now()) {
+export async function readAnkiCollection(bytes, now = Date.now(), storeImagesFor = async () => new Map()) {
   let DatabaseSync;
   try {
     ({ DatabaseSync } = await import('node:sqlite'));
@@ -463,23 +529,72 @@ export async function readAnkiCollection(bytes, now = Date.now()) {
     throw new Error('Importing from Anki needs Node.js 22.5 or newer.');
   }
   // Current Anki compresses the database inside the package.
-  if (ZSTD.every((byte, i) => bytes[i] === byte)) {
-    const { zstdDecompressSync } = await import('node:zlib');
-    if (!zstdDecompressSync) throw new Error('This Anki file needs Node.js 22.15 or newer to open.');
-    bytes = zstdDecompressSync(bytes);
-  }
+  if (isZstd(bytes)) bytes = await unzstd(bytes);
   if (utf8.decode(bytes.subarray(0, 15)) !== 'SQLite format 3') throw new Error('This is not an Anki collection.');
 
   // SQLite reads from a file, so the database spends a moment in a temporary folder.
   const folder = await mkdtemp(join(tmpdir(), 'recall-anki-'));
   let db;
+  let result;
   try {
     const file = join(folder, 'collection.db');
     await writeFile(file, bytes);
     db = new DatabaseSync(file, { readOnly: true });
-    return convert((sql) => db.prepare(sql).all(), now);
+    result = convert((sql) => db.prepare(sql).all(), now);
   } finally {
     db?.close();
     await rm(folder, { recursive: true, force: true });
   }
+  await storeImages(result, storeImagesFor);
+  return result;
+}
+
+/**
+ * Package file names by the names cards use for them. Older packages list them as JSON;
+ * current ones as compressed protobuf, where an entry's place in the list is its file name.
+ */
+async function mediaFiles(files) {
+  if (!files.has('media')) return new Map();
+  let bytes = await files.get('media')();
+  if (isZstd(bytes)) bytes = await unzstd(bytes);
+  if (utf8.decode(bytes.subarray(0, 64)).trimStart().startsWith('{')) {
+    return new Map(Object.entries(JSON.parse(utf8.decode(bytes))).map(([file, name]) => [name, file]));
+  }
+  // Field numbers are from Anki's media.proto: entries = 1, and in each, name = 1.
+  return new Map(
+    (protobuf(bytes).get(1) ?? []).map((entry, i) => {
+      const m = protobuf(entry);
+      return [pbText(m, 1), String(pbNumber(m, 255, i))];
+    }),
+  );
+}
+
+/**
+ * Decks and cards from an Anki .apkg or .colpkg file, as `readAnkiCollection` gives them.
+ * `saveImage(bytes)` keeps an image and returns its stored name, or throws for a file that is
+ * not an image Recall can show.
+ */
+export async function readAnkiPackage(bytes, { now = Date.now(), saveImage } = {}) {
+  const files = readZip(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), 'Anki');
+  // Newest layout first; packages made for older versions of Anki carry the other two.
+  const name = ['collection.anki21b', 'collection.anki21', 'collection.anki2'].find((n) => files.has(n));
+  if (!name) throw new Error('This file has no Anki collection in it.');
+  const media = await mediaFiles(files);
+  return readAnkiCollection(await files.get(name)(), now, async (names) => {
+    const stored = new Map();
+    // A card may name the same file in a second way, such as with its spaces written as %20.
+    const byFile = new Map();
+    for (const image of names) {
+      const file = media.get(image) ?? media.get(decodeName(image));
+      if (!file || !files.has(file) || !saveImage) continue;
+      if (!byFile.has(file)) {
+        let data = await files.get(file)();
+        if (isZstd(data)) data = await unzstd(data);
+        // Not an image Recall can show: the cards go without it.
+        byFile.set(file, await saveImage(data).catch(() => null));
+      }
+      if (byFile.get(file)) stored.set(image, byFile.get(file));
+    }
+    return stored;
+  });
 }

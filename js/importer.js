@@ -1,6 +1,6 @@
 // Reads spreadsheets into rows of text: Excel .xlsx files, and CSV or tab-separated text.
 // No libraries: an .xlsx file is a ZIP of XML files, which the browser can unpack itself.
-// An Anki .apkg file is a ZIP too; its database is picked out here for the server to read.
+// The server uses the same ZIP reader to open Anki packages.
 
 // ---- ZIP --------------------------------------------------------------------
 
@@ -12,7 +12,7 @@ async function inflate(bytes) {
 const utf8 = new TextDecoder();
 
 /** Map of file name to a function returning that file's bytes. `kind` names the file in errors. */
-function readZip(buffer, kind = '.xlsx') {
+export function readZip(buffer, kind = '.xlsx') {
   const view = new DataView(buffer);
   const bytes = new Uint8Array(buffer);
 
@@ -95,37 +95,136 @@ async function firstSheetPath(files) {
   return [...files.keys()].filter((name) => /^xl\/worksheets\/[^/]+\.xml$/.test(name)).sort()[0];
 }
 
-export async function parseXlsx(buffer) {
+// ---- XLSX images ------------------------------------------------------------
+// A picture is either placed over the sheet, anchored to the cell under its top-left corner,
+// or (in recent Excel) placed in a cell as its value. Both are found through relationship
+// files, which name the parts each part refers to.
+
+/** The path of the part `target` names, from the part `from` that names it. */
+function partPath(from, target) {
+  if (target.startsWith('/')) return target.slice(1);
+  const parts = from.split('/').slice(0, -1);
+  for (const piece of target.split('/')) {
+    if (piece === '..') parts.pop();
+    else if (piece !== '.') parts.push(piece);
+  }
+  return parts.join('/');
+}
+
+/** Map of relationship id to part path, for the part at `path`. */
+async function relationships(files, path) {
+  const slash = path.lastIndexOf('/');
+  const xml = await readText(files, `${path.slice(0, slash)}/_rels/${path.slice(slash + 1)}.rels`);
+  const rels = new Map();
+  for (const m of (xml || '').matchAll(/<Relationship\b[^>]*>/g)) {
+    if (attribute(m[0], 'TargetMode') === 'External') continue;
+    rels.set(attribute(m[0], 'Id'), partPath(path, attribute(m[0], 'Target') ?? ''));
+  }
+  return rels;
+}
+
+const tag = (name) => `(?:\\w+:)?${name}`;
+
+/** Pictures placed over the sheet: `[{ row, column, path }]`, counted from 0. */
+async function anchoredImages(files, sheetPath, sheet) {
+  const sheetRels = await relationships(files, sheetPath);
+  const images = [];
+  for (const drawing of sheet.matchAll(new RegExp(`<${tag('drawing')}\\b[^>]*>`, 'g'))) {
+    const drawingPath = sheetRels.get(attribute(drawing[0], 'r:id'));
+    const xml = drawingPath && (await readText(files, drawingPath));
+    if (!xml) continue;
+    const drawingRels = await relationships(files, drawingPath);
+    const anchors = new RegExp(`<(${tag('(?:twoCellAnchor|oneCellAnchor)')})\\b[\\s\\S]*?<\\/\\1>`, 'g');
+    for (const anchor of xml.matchAll(anchors)) {
+      const from = new RegExp(`<${tag('from')}>([\\s\\S]*?)<\\/${tag('from')}>`).exec(anchor[0])?.[1] ?? '';
+      const number = (name) => Number(new RegExp(`<${tag(name)}>(\\d+)<`).exec(from)?.[1]);
+      const blip = new RegExp(`<${tag('blip')}\\b[^>]*>`).exec(anchor[0])?.[0];
+      const path = blip && drawingRels.get(attribute(blip, 'r:embed'));
+      if (path && files.has(path) && Number.isInteger(number('row'))) images.push({ row: number('row'), column: number('col') || 0, path });
+    }
+  }
+  return images;
+}
+
+/** For pictures placed in cells: a function from a cell's `vm` number to the picture's path. */
+async function inCellImages(files) {
+  const metadata = await readText(files, 'xl/metadata.xml');
+  const values = await readText(files, 'xl/richData/rdrichvalue.xml');
+  if (!metadata || !values) return () => undefined;
+  const blocks = (xml) => [...(xml ?? '').matchAll(/<bk\b[^>]*>([\s\S]*?)<\/bk>/g)].map((m) => m[1]);
+  // A cell's vm picks a value block, which points into the rich value blocks of the future
+  // metadata, each naming a rich value.
+  const valueBlocks = blocks(/<valueMetadata\b[\s\S]*?<\/valueMetadata>/.exec(metadata)?.[0]);
+  const richBlocks = blocks(/<futureMetadata\b[^>]*name="XLRICHVALUE"[\s\S]*?<\/futureMetadata>/.exec(metadata)?.[0]);
+  const structures = [...((await readText(files, 'xl/richData/rdrichvaluestructure.xml')) || '').matchAll(/<s\b[^>]*>([\s\S]*?)<\/s>/g)].map((m) =>
+    [...m[1].matchAll(/<k\b[^>]*>/g)].map((k) => attribute(k[0], 'n')),
+  );
+  const richValues = [...values.matchAll(/<rv\b([^>]*)>([\s\S]*?)<\/rv>/g)].map((m) => ({
+    structure: Number(attribute(m[1], 's') ?? 0),
+    values: [...m[2].matchAll(/<v\b[^>]*>([\s\S]*?)<\/v>/g)].map((v) => v[1]),
+  }));
+  const relsPath = 'xl/richData/richValueRel.xml';
+  const relIds = [...((await readText(files, relsPath)) || '').matchAll(/<rel\b[^>]*>/g)].map((m) => attribute(m[0], 'r:id'));
+  const rels = await relationships(files, relsPath);
+  return (vm) => {
+    const rc = /<rc\b[^>]*>/.exec(valueBlocks[vm - 1] ?? '')?.[0];
+    const rvb = rc && /<(?:\w+:)?rvb\b[^>]*>/.exec(richBlocks[Number(attribute(rc, 'v'))] ?? '')?.[0];
+    const value = rvb && richValues[Number(attribute(rvb, 'i'))];
+    if (!value) return undefined;
+    const key = (structures[value.structure] ?? []).indexOf('_rvRel:LocalImageIdentifier');
+    const path = rels.get(relIds[Number(value.values[Math.max(key, 0)])]);
+    return path && files.has(path) ? path : undefined;
+  };
+}
+
+/**
+ * Rows of cell text from an .xlsx file. A picture in or over a cell joins that cell's text as
+ * an [image:<path>] token, and its bytes are put in `images` under the same path.
+ */
+export async function parseXlsx(buffer, images = new Map()) {
   const files = readZip(buffer);
   const sheetPath = await firstSheetPath(files);
   if (!sheetPath) throw new Error('No worksheet found in this file.');
 
   const sharedXml = (await readText(files, 'xl/sharedStrings.xml')) || '';
   const shared = [...sharedXml.matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)].map((m) => textOf(m[1] ?? ''));
+  const cellImage = await inCellImages(files);
+  const addImage = async (path) => {
+    images.set(path, await files.get(path)());
+    return `[image:${path}]`;
+  };
 
   const sheet = await readText(files, sheetPath);
   const rows = [];
-  for (const rowMatch of sheet.matchAll(/<row\b[^>]*?(?:\/>|>([\s\S]*?)<\/row>)/g)) {
+  for (const rowMatch of sheet.matchAll(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g)) {
     const row = [];
     let next = 0;
-    for (const cell of (rowMatch[1] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    for (const cell of (rowMatch[2] ?? '').matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
       const [, attrs, body = ''] = cell;
       const reference = attribute(attrs, 'r');
       const column = reference ? columnIndex(reference) : next;
       next = column + 1;
       const type = attribute(attrs, 't');
       const value = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(body)?.[1];
+      const picture = attribute(attrs, 'vm') && cellImage(Number(attribute(attrs, 'vm')));
       let text = '';
-      if (type === 'inlineStr') text = textOf(body);
+      if (picture) text = await addImage(picture);
+      else if (type === 'inlineStr') text = textOf(body);
       else if (value === undefined) text = '';
       else if (type === 's') text = shared[Number(value)] ?? '';
       else if (type === 'b') text = value === '1' ? 'TRUE' : 'FALSE';
       else text = decodeXml(value);
       row[column] = text;
     }
-    rows.push(Array.from(row, (cell) => cell ?? ''));
+    // Rows are numbered from 1; a row left out of the file is empty.
+    const number = Number(attribute(rowMatch[1], 'r'));
+    rows[Number.isInteger(number) && number > 0 ? number - 1 : rows.length] = row;
   }
-  return rows;
+  for (const { row, column, path } of await anchoredImages(files, sheetPath, sheet)) {
+    const cells = (rows[row] ??= []);
+    cells[column] = [cells[column], await addImage(path)].filter(Boolean).join('\n');
+  }
+  return Array.from(rows, (row) => Array.from(row ?? [], (cell) => cell ?? ''));
 }
 
 // ---- CSV and tab-separated text ---------------------------------------------
@@ -174,31 +273,20 @@ export function parseDelimited(text) {
   return rows;
 }
 
-// ---- Anki -------------------------------------------------------------------
-
-/**
- * The collection database from an Anki .apkg or .colpkg file, as bytes. Only this part is
- * sent to the server, so a package full of images and audio is no slower to import.
- */
-export async function ankiCollection(buffer) {
-  const files = readZip(buffer, 'Anki');
-  // Newest layout first; packages made for older versions of Anki carry the other two.
-  const name = ['collection.anki21b', 'collection.anki21', 'collection.anki2'].find((n) => files.has(n));
-  if (!name) throw new Error('This file has no Anki collection in it.');
-  return files.get(name)();
-}
-
 // ---- Entry points -----------------------------------------------------------
 
-/** Rows of trimmed cell text from a spreadsheet file, without blank rows. */
-export async function parseSpreadsheet(buffer, fileName = '') {
+/**
+ * Rows of trimmed cell text from a spreadsheet file, without blank rows. Pictures in an .xlsx
+ * file become [image:<path>] tokens, with their bytes put in `images` (see `parseXlsx`).
+ */
+export async function parseSpreadsheet(buffer, fileName = '', images = new Map()) {
   const bytes = new Uint8Array(buffer, 0, Math.min(8, buffer.byteLength));
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
   const isOldExcel = bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0;
   if (isOldExcel || (/\.xls$/i.test(fileName) && !isZip)) {
     throw new Error('Old .xls files are not supported. In Excel, use "Save As" and choose .xlsx.');
   }
-  const rows = isZip ? await parseXlsx(buffer) : parseDelimited(decodeText(buffer));
+  const rows = isZip ? await parseXlsx(buffer, images) : parseDelimited(decodeText(buffer));
   return rows
     .map((row) => row.map((cell) => String(cell).trim()))
     .filter((row) => row.some((cell) => cell !== ''));
