@@ -1,2 +1,5 @@
 data/
 .tts/
+# Books and generated decks: copyrighted material, kept out of git
+*.pdf
+decks/
