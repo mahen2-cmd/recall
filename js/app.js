@@ -960,6 +960,8 @@ function openAnkiDialog(fileName, { decks, suspended, blank, sound, missingImage
     .filter((deck) => deck.cards.length);
   const total = incoming.reduce((sum, deck) => sum + deck.cards.length, 0);
   const existing = decks.reduce((sum, deck) => sum + deck.cards.length, 0) - total;
+  const fresh = incoming.reduce((sum, deck) => sum + deck.cards.filter((card) => card.state === State.New).length, 0);
+  const reserved = h('input', { type: 'checkbox' });
 
   const breakdown = (cards) => {
     const count = (...states) => cards.filter((card) => states.includes(card.state)).length;
@@ -988,9 +990,10 @@ function openAnkiDialog(fileName, { decks, suspended, blank, sound, missingImage
     {
       onsubmit: (e) => {
         e.preventDefault();
-        const added = store.importAnkiDecks(incoming);
+        const added = store.importAnkiDecks(incoming, Date.now(), { reserved: reserved.checked });
         dialog.close();
-        toast(`Imported ${plural(added, 'card')} from Anki`);
+        const onReserve = !reserved.checked ? '' : fresh === added ? ' onto the reserve' : `, ${fresh.toLocaleString()} of them on reserve`;
+        toast(`Imported ${plural(added, 'card')} from Anki${onReserve}`);
       },
     },
     h(
@@ -1008,6 +1011,13 @@ function openAnkiDialog(fileName, { decks, suspended, blank, sound, missingImage
           h('thead', null, h('tr', null, h('th', null, 'Deck'), h('th', null, 'Cards'))),
           h('tbody', null, incoming.map((deck) => h('tr', null, h('td', null, deck.name), h('td', null, breakdown(deck.cards))))),
         ),
+      ),
+    fresh > 0 &&
+      h(
+        'label',
+        { class: 'check', style: 'margin-top: 14px' },
+        reserved,
+        fresh === total ? 'Put these cards on reserve, to pull in when you want them' : `Put the ${plural(fresh, 'new card')} on reserve, to pull in when you want them`,
       ),
     notes.map((note) => h('p', { class: 'import-summary' }, note)),
     h(

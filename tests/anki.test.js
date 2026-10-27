@@ -348,3 +348,15 @@ test('importing into Recall adds decks once and makes the cards due as in Anki',
   assert.equal(store.decks().length, 1);
   assert.equal(store.cardsIn(deck.id).length, 8);
 });
+
+test('an Anki import can put its new cards on reserve, in Anki’s order, leaving studied ones alone', async () => {
+  store.reset();
+  const { decks } = await readAnkiCollection(legacy(), NOW);
+  assert.equal(store.importAnkiDecks(decks, NOW, { reserved: true }), 8);
+  const [deck] = store.decks();
+  assert.deepEqual(store.reserveIn(deck.id).map((card) => card.front), ['First new', 'Second new', 'Lisboa fica em [país]']);
+  // Nothing new is left to study; the review and learning cards keep their schedule.
+  assert.deepEqual(store.counts(deck.id, NOW), { new: 0, learning: 2, review: 1, total: 3, tomorrow: { new: 0, learning: 0, review: 0, total: 0 }, cards: 8, reserve: 3 });
+  assert.equal(store.pullFromReserve(deck.id, 1, NOW), 1);
+  assert.equal(store.counts(deck.id, NOW).new, 1);
+});

@@ -181,6 +181,8 @@ Some things do not come across:
 - Recall has no setting for custom learning steps, starting ease, easy bonus and the like. If a deck changes these in Anki, the dialog says which, and Recall uses Anki's defaults for them.
 - The review history itself is not kept, only the schedule it led to.
 
+Tick **Put these cards on reserve** in the dialog to keep the new cards out of study until you pull them in, in Anki's order. Cards already being studied in Anki keep their schedule either way.
+
 Importing the same file again adds only the cards that are not in Recall yet. It does not update cards already imported, so reviews done in Anki afterwards are not picked up.
 
 ## Voices
