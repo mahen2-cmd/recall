@@ -16,6 +16,7 @@ A small, fast flashcard app with Anki's scheduling and a cleaner interface. It r
 - **Anki's scheduler.** Ported from Anki's source: its default algorithm (SM-2), and FSRS-6 as a per-deck option, with the same learning steps, relearning, interval fuzz and 4am day rollover.
 - **Intervals on the buttons.** Again, Hard, Good and Easy each show when the card would come back.
 - **A reserve.** Keep cards aside in a deck, out of study, and pull in as many as you like when you are ready for them, in an order you can rearrange. Fill it from a CSV or Excel file, or with reversed copies of cards you choose.
+- **Upcoming cards.** How many cards come up on each day of the next week, month or three months, new, learning and due, for one deck or all of them.
 - **Statistics.** A forecast of upcoming reviews, a year-long activity calendar, how many cards are new, learning, young and mature, and how often you press each answer button.
 - **Read aloud.** A speaker button on each side of a card, a language for each side, optional auto-play, and an adjustable speaking speed. Maths and images are skipped. Audio is generated once per sentence and cached, unless a deck is set not to keep it.
 - **Your data in a file.** Everything is saved to `data/recall.json`, with a dated backup each day, and images to `data/media/`.
@@ -149,6 +150,16 @@ The chart button in the top bar opens the statistics for all decks; the one on a
 - **Answer buttons.** How often you pressed Again, Hard, Good and Easy on learning, young and mature cards. **Retention** is the share of young and mature reviews that were not answered Again.
 
 Recall records which button was pressed, and in which deck, from the version that added this page. Reviews done before that still count towards the activity calendar and the streak for all decks, but have no per-deck or per-button breakdown.
+
+## Upcoming cards
+
+The calendar button in the top bar lists the cards coming up for all decks; the one on a deck's page, or **See the days ahead** under its counts, lists that deck's. Choose to look 1 week, 1 month or 3 months ahead.
+
+- **Totals** for today, tomorrow, the next 7 days and the next 30 days.
+- **A chart** of each day, split into new, learning and due cards.
+- **Day by day**, a table of every day with its new, learning and due cards and their total. Weeks start on a Monday.
+
+Today counts what is waiting now, overdue cards included. Later days count the reviews already scheduled for them, and new cards at each deck's daily limit until there are none left, supposing you study every day. The cards you study come back on later days too, so those days fill up as you go. Cards on reserve are not counted until they are pulled in.
 
 ## Importing from Excel
 

@@ -64,6 +64,7 @@ const ICONS = {
   speaker: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
   play: '<path d="M7 5l12 7-12 7V5z"/>',
   chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
+  calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
   box: '<path d="M4 8h16v11H4zM3 5h18v3H3zM10 12h4"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
@@ -1101,6 +1102,7 @@ function topbar() {
     { class: 'topbar' },
     h('a', { class: 'brand', href: '#/' }, h('span', { class: 'brand-mark' }), 'Recall'),
     storageChip(),
+    h('a', { class: 'icon-btn', href: '#/upcoming', title: 'Upcoming cards', 'aria-label': 'Upcoming cards' }, icon('calendar')),
     h('a', { class: 'icon-btn', href: '#/stats', title: 'Statistics', 'aria-label': 'Statistics' }, icon('chart')),
     iconButton('upload', 'Import backup', importBackup),
     iconButton('download', 'Export backup', exportBackup),
@@ -1479,10 +1481,11 @@ function renderDeck(deck) {
       h(
         'div',
         { class: 'page-head', style: 'margin-top: 14px' },
-        h('div', null, h('h1', null, deck.name), countPills(c), h('div', { class: 'deck-meta tomorrow' }, tomorrowText(c))),
+        h('div', null, h('h1', null, deck.name), countPills(c), h('div', { class: 'deck-meta tomorrow' }, tomorrowText(c), ' ', h('a', { href: `#/upcoming/${deck.id}` }, 'See the days ahead'))),
         h(
           'div',
           { class: 'actions' },
+          h('a', { class: 'icon-btn', href: `#/upcoming/${deck.id}`, title: 'Upcoming cards', 'aria-label': 'Upcoming cards' }, icon('calendar')),
           h('a', { class: 'icon-btn', href: `#/stats/${deck.id}`, title: 'Deck statistics', 'aria-label': 'Deck statistics' }, icon('chart')),
           iconButton('edit', 'Deck settings', () => openDeckDialog(deck)),
           iconButton('trash', 'Delete deck', () => removeDeck(deck), 'danger'),
@@ -1699,7 +1702,10 @@ function axisTop(max) {
   return { step, top: Math.ceil(Math.max(max, 4) / step) * step };
 }
 
-/** Vertical bars from `[{ value, label, tick }]`; `tick` is the text under a bar, if any. */
+/**
+ * Vertical bars from `[{ value, label, tick, parts }]`; `tick` is the text under a bar, if any,
+ * and `parts`, if given, splits the bar into `[kind, value]` pieces, from the bottom up.
+ */
 function columnChart(items, unit) {
   const { step, top } = axisTop(Math.max(...items.map((item) => item.value)));
   const ticks = Array.from({ length: top / step + 1 }, (_, i) => i * step);
@@ -1715,7 +1721,16 @@ function columnChart(items, unit) {
         { class: 'chart-cols' },
         items.map((item) =>
           withTip(
-            h('div', { class: 'chart-col' }, item.value > 0 && h('div', { class: 'chart-bar', style: `height: ${(item.value / top) * 100}%` })),
+            h(
+              'div',
+              { class: 'chart-col' },
+              item.value > 0 &&
+                h(
+                  'div',
+                  { class: item.parts ? 'chart-bar split' : 'chart-bar', style: `height: ${(item.value / top) * 100}%` },
+                  item.parts?.filter(([, n]) => n).map(([kind, n]) => h('i', { class: `k-${kind}`, style: `flex: ${n} 0 0` })),
+                ),
+            ),
             plural(item.value, unit),
             item.label,
           ),
@@ -1963,6 +1978,145 @@ function renderStats(deck) {
   if (activity) activity.scroller.scrollLeft = activity.scroller.scrollWidth;
 }
 
+// ---- Upcoming -------------------------------------------------------------
+
+// How many days ahead of today the page lists, and how often the chart labels a day.
+const AHEAD = [
+  { days: 7, every: 1, label: '1 week', span: 'week' },
+  { days: 30, every: 7, label: '1 month', span: 'month' },
+  { days: 90, every: 14, label: '3 months', span: '3 months' },
+];
+let ahead = AHEAD[0];
+
+const dayName = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+
+// The kinds of card counted each day, as `store.upcoming` names them, and their colours.
+const UPCOMING_KINDS = [
+  ['new', 'New', 'new'],
+  ['learning', 'Learning', 'learning'],
+  ['review', 'Due', 'young'],
+];
+
+const breakdown = (day) => UPCOMING_KINDS.map(([kind, label]) => `${day[kind].toLocaleString()} ${label.toLowerCase()}`).join(', ');
+
+function renderUpcoming(deck) {
+  const now = Date.now();
+  const decks = store.decks();
+  const all = store.upcoming(deck?.id, Math.max(31, ahead.days + 1), now);
+  const days = all.slice(0, ahead.days + 1);
+  const name = (day, i) => (i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : dayName.format(day.start));
+  const cards = deck ? store.cardsIn(deck.id) : decks.flatMap((d) => store.cardsIn(d.id));
+  const hasCards = cards.length > 0;
+  const reserve = cards.some((c) => c.reserved);
+
+  const deckSelect = h(
+    'select',
+    { 'aria-label': 'Deck', onchange: () => (location.hash = deckSelect.value ? `#/upcoming/${deckSelect.value}` : '#/upcoming') },
+    h('option', { value: '' }, 'All decks'),
+    decks.map((d) => h('option', { value: d.id, selected: d.id === deck?.id }, d.name)),
+  );
+  const stat = (n, label) => h('div', { class: 'stat' }, h('b', null, n.toLocaleString()), label);
+  const ahead7 = sum(all.slice(1, 8).map((d) => d.total));
+  const ahead30 = sum(all.slice(1, 31).map((d) => d.total));
+
+  const items = days.map((day, i) => ({
+    value: day.total,
+    label: `${i < 2 ? `${name(day, i)}, ${dayName.format(day.start)}` : longDate.format(day.start)}: ${breakdown(day)}`,
+    tick: i % ahead.every ? null : i === 0 ? 'Today' : ahead.every === 1 ? weekday.format(day.start) : shortDate.format(day.start),
+    parts: [...UPCOMING_KINDS].reverse().map(([kind, , colour]) => [colour, day[kind]]),
+  }));
+  const total = sum(days.slice(1).map((d) => d.total));
+  const busiest = days.slice(1).reduce((best, day) => (day.total > best.total ? day : best), { total: 0 });
+  const sub = total
+    ? `${plural(total, 'card')} over the next ${ahead.span}, about ${+(total / ahead.days).toFixed(1)} a day. The busiest day is ${dayName.format(busiest.start)}, with ${busiest.total.toLocaleString()}.`
+    : `Nothing comes up over the next ${ahead.span}.`;
+
+  const table = h(
+    'table',
+    { class: 'upcoming' },
+    h('thead', null, h('tr', null, h('th', { scope: 'col' }, 'Day'), UPCOMING_KINDS.map(([, label]) => h('th', { scope: 'col' }, label)), h('th', { scope: 'col' }, 'Total'))),
+    h(
+      'tbody',
+      null,
+      days.map((day, i) =>
+        h(
+          'tr',
+          { class: [!day.total && 'none', i > 0 && new Date(day.start).getDay() === 1 && 'week-start'].filter(Boolean).join(' ') },
+          h('th', { scope: 'row' }, name(day, i), i < 2 && h('span', null, dayName.format(day.start))),
+          UPCOMING_KINDS.map(([kind]) => h('td', { class: day[kind] ? kind : null }, day[kind] ? day[kind].toLocaleString() : '–')),
+          h('td', null, h('b', null, day.total.toLocaleString())),
+        ),
+      ),
+    ),
+  );
+
+  app.replaceChildren(
+    h(
+      'div',
+      { class: 'page' },
+      topbar(),
+      h('a', { class: 'back', href: deck ? `#/deck/${deck.id}` : '#/' }, icon('back'), deck ? deck.name : 'All decks'),
+      h('div', { class: 'page-head', style: 'margin-top: 14px' }, h('div', null, h('h1', null, 'Upcoming'), h('p', { class: 'sub' }, deck ? deck.name : 'All decks'))),
+      hasCards
+        ? [
+            h(
+              'div',
+              { class: 'filters' },
+              decks.length > 1 && deckSelect,
+              h(
+                'div',
+                { class: 'segmented', role: 'group', 'aria-label': 'How far ahead' },
+                AHEAD.map((range) =>
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      'aria-pressed': String(range === ahead),
+                      onclick: () => {
+                        ahead = range;
+                        render();
+                      },
+                    },
+                    range.label,
+                  ),
+                ),
+              ),
+            ),
+            h('div', { class: 'summary' }, stat(all[0].total, 'today'), stat(all[1].total, 'tomorrow'), stat(ahead7, 'in the next 7 days'), stat(ahead30, 'in the next 30 days')),
+            panel(
+              'Cards each day',
+              sub,
+              columnChart(items, 'card'),
+              h(
+                'ul',
+                { class: 'legend' },
+                UPCOMING_KINDS.map(([kind, label, colour]) => h('li', null, h('i', { class: `k-${colour}` }), h('span', null, label), h('b', null, sum(days.map((d) => d[kind])).toLocaleString()))),
+              ),
+            ),
+            panel(
+              'Day by day',
+              null,
+              h('div', { class: 'table-scroll' }, table),
+              h(
+                'p',
+                { class: 'panel-note' },
+                'New cards are counted at each deck’s daily limit, supposing you study every day. The cards you study will come back on later days too, so those days fill up as you go.',
+                reserve ? ' Cards on reserve are not counted until they are pulled in.' : '',
+              ),
+            ),
+          ]
+        : h(
+            'div',
+            { class: 'empty' },
+            h('h2', null, 'Nothing coming up'),
+            h('p', null, 'Add some cards and study them. The days they come back on will be listed here.'),
+            h('a', { class: 'btn primary', href: deck ? `#/deck/${deck.id}` : '#/' }, deck ? 'Go to deck' : 'Go to decks'),
+          ),
+    ),
+  );
+}
+
 // ---- Routing and shortcuts ------------------------------------------------
 
 function route() {
@@ -1984,6 +2138,7 @@ function render() {
   if (view === 'deck' && deck) renderDeck(deck);
   else if (view === 'study' && deck) renderStudy(deck);
   else if (view === 'stats') renderStats(deck);
+  else if (view === 'upcoming') renderUpcoming(deck);
   else renderHome();
 }
 

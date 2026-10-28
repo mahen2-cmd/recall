@@ -81,6 +81,32 @@ test('tomorrow counts the learning and review cards scheduled for that day', () 
   assert.deepEqual(store.counts(deck.id, T0).tomorrow, { new: 0, learning: 1, review: 1, total: 2 });
 });
 
+test('upcoming lists each day: overdue cards today, then the reviews and new cards to come', () => {
+  const deck = setup({ newPerDay: 2 });
+  for (let i = 0; i < 5; i++) store.addCard(deck.id, `n${i}`, `n${i}`, T0 + i);
+  store.addCard(deck.id, 'kept', 'kept', T0, { reserved: true });
+  const [overdue, inThree, tooFar] = ['o', 't', 'f'].map((f) => store.addCard(deck.id, f, f, T0));
+  store.updateCard(overdue.id, { state: State.Review, due: T0 - 5 * DAY });
+  store.updateCard(inThree.id, { state: State.Review, due: T0 + 3 * DAY });
+  store.updateCard(tooFar.id, { state: State.Review, due: T0 + 9 * DAY });
+
+  const days = store.upcoming(deck.id, 7, T0);
+  assert.equal(days.length, 7);
+  assert.deepEqual(days.map((d) => d.new), [2, 2, 1, 0, 0, 0, 0]);
+  assert.deepEqual(days.map((d) => d.review), [1, 0, 0, 1, 0, 0, 0]);
+  assert.deepEqual(days.map((d) => d.total), [3, 2, 1, 1, 0, 0, 0]);
+  assert.equal(days[1].start - days[0].start, DAY);
+  assert.deepEqual(store.upcoming(deck.id, 7, T0)[1], { start: days[1].start, ...store.counts(deck.id, T0).tomorrow });
+});
+
+test('upcoming for all decks adds up each deck, with its own daily limit', () => {
+  const a = setup({ newPerDay: 1 });
+  const b = store.createDeck({ name: 'Other', newPerDay: 3 });
+  for (let i = 0; i < 3; i++) store.addCard(a.id, `a${i}`, 'a', T0 + i);
+  for (let i = 0; i < 4; i++) store.addCard(b.id, `b${i}`, 'b', T0 + i);
+  assert.deepEqual(store.upcoming(undefined, 4, T0).map((d) => d.new), [4, 2, 1, 0]);
+});
+
 test('queue order: due learning, then reviews, then new, then waiting learning', () => {
   const deck = setup();
   const learning = store.addCard(deck.id, 'learning', '-', T0);

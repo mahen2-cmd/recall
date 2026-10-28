@@ -452,30 +452,56 @@ function queue(deckId, now) {
 
 /**
  * How many cards are waiting in a deck today, by kind, and how many it holds in all and on reserve.
- * `tomorrow` counts the same kinds for tomorrow, supposing today's cards are all studied: the
- * learning and review cards already scheduled for then, and the new cards left after today's, up
- * to the daily limit. The reserve is left out, as its cards only come in when pulled.
+ * `tomorrow` counts the same kinds for tomorrow, as `upcoming` does.
  */
 export function counts(deckId, now = Date.now()) {
   const q = queue(deckId, now);
   const n = { new: q.fresh.length, learning: q.learning.length, review: q.review.length };
   const all = cardsIn(deckId);
-  const studied = all.filter((c) => !c.reserved);
-  const start = nextDayAt(now);
-  const end = nextDayAt(start);
-  const scheduled = studied.filter((c) => c.state !== State.New && c.due >= start && c.due < end);
-  const next = {
-    new: Math.min(deck(deckId).newPerDay, studied.filter((c) => c.state === State.New).length - n.new),
-    learning: scheduled.filter(isLearning).length,
-    review: scheduled.filter((c) => c.state === State.Review).length,
-  };
+  const { start, ...tomorrow } = upcoming(deckId, 2, now)[1];
   return {
     ...n,
     total: n.new + n.learning + n.review,
-    tomorrow: { ...next, total: next.new + next.learning + next.review },
+    tomorrow,
     cards: all.length,
     reserve: all.filter((c) => c.reserved).length,
   };
+}
+
+/**
+ * The cards coming up on each of the next `days` days, starting with today, for one deck or,
+ * without `deckId`, for all of them. Each day is `{ start, new, learning, review, total }`.
+ * Today is what the study queue holds now, overdue cards included. Later days suppose every
+ * day's cards are studied: the learning and review cards already scheduled for that day, and new
+ * cards at the deck's daily limit until none are left. The reserve is left out, as its cards only
+ * come in when pulled, and so are the reviews of cards not yet studied, as their days are not known.
+ */
+export function upcoming(deckId, days = 30, now = Date.now()) {
+  const out = [];
+  for (let i = 0, start = dayStart(now); i < days; i++, start = nextDayAt(start)) {
+    out.push({ start, new: 0, learning: 0, review: 0, total: 0 });
+  }
+  for (const d of deckId ? [deck(deckId)] : state.decks) {
+    const q = queue(d.id, now);
+    out[0].new += q.fresh.length;
+    out[0].learning += q.learning.length;
+    out[0].review += q.review.length;
+    const studied = cardsIn(d.id).filter((c) => !c.reserved);
+    let waiting = studied.filter((c) => c.state === State.New).length - q.fresh.length;
+    for (const day of out.slice(1)) {
+      const n = Math.min(d.newPerDay, waiting);
+      day.new += n;
+      waiting -= n;
+    }
+    for (const c of studied) {
+      if (c.state === State.New) continue;
+      // Rounded, as a day can be an hour short or long when the clocks change.
+      const i = Math.round((dayStart(c.due) - out[0].start) / DAY);
+      if (i > 0 && i < days) out[i][isLearning(c) ? 'learning' : 'review']++;
+    }
+  }
+  for (const day of out) day.total = day.new + day.learning + day.review;
+  return out;
 }
 
 /** The next card to study, or `undefined` when the deck is done for today. */

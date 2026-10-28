@@ -367,6 +367,11 @@ kbd {
 .deck-meta.tomorrow {
   margin-top: 8px;
 }
+.deck-meta.tomorrow a {
+  color: var(--accent);
+  font-weight: 560;
+  white-space: nowrap;
+}
 .deck-foot {
   display: flex;
   align-items: center;
@@ -1398,6 +1403,81 @@ math-field.math-input:focus-within {
   white-space: nowrap;
 }
 
+.chart-bar.split {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 1px;
+  overflow: hidden;
+  background: none;
+}
+.chart-bar.split i {
+  min-height: 1px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+table.upcoming {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.upcoming th,
+.upcoming td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+.upcoming th:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+.upcoming td:last-child {
+  padding-right: 0;
+}
+.upcoming thead th {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 560;
+}
+.upcoming tbody th {
+  font-weight: 560;
+}
+.upcoming tbody th span {
+  margin-left: 8px;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 13px;
+}
+.upcoming td {
+  color: var(--muted);
+}
+.upcoming td.new {
+  color: var(--new);
+}
+.upcoming td.learning {
+  color: var(--learning);
+}
+.upcoming td.review {
+  color: var(--review);
+}
+.upcoming td b {
+  color: var(--text);
+  font-weight: 650;
+}
+.upcoming tr.none th,
+.upcoming tr.none td b {
+  color: var(--muted);
+  font-weight: 400;
+}
+.upcoming tr.week-start > * {
+  border-top: 1px solid var(--border-strong);
+}
+.upcoming tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
 .heatmap {
   display: flex;
   gap: 8px;
@@ -1581,6 +1661,13 @@ math-field.math-input:focus-within {
 /* ---- Small screens ----------------------------------------------------- */
 
 @media (max-width: 640px) {
+  .upcoming th,
+  .upcoming td {
+    padding-inline: 6px;
+  }
+  .upcoming tbody th span {
+    display: none;
+  }
   .page {
     padding: 0 16px 64px;
   }
