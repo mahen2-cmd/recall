@@ -14,6 +14,8 @@ let query = '';
 const NO_FILTERS = { groups: [], due: 'any', added: 'any', lapses: 'any', sort: 'newest' };
 let filters = { ...NO_FILTERS };
 let filtersDeck = null;
+// Whether the filter and sort selects are open on a phone, where they start folded away.
+let filtersOpen = false;
 // Ids of the cards ticked in that list. Only cards on screen stay selected.
 let selected = new Set();
 
@@ -71,6 +73,7 @@ const ICONS = {
   swap: '<path d="M7 4L3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/>',
   grip: '<path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/>',
   sigma: '<path d="M18 5H6l6 7-6 7h12"/>',
+  more: '<path d="M6 12h.01M12 12h.01M18 12h.01"/>',
   image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 15l-5-5-9 9"/>',
 };
 
@@ -79,6 +82,20 @@ function icon(name) {
   span.innerHTML = `<svg viewBox="0 0 24 24">${ICONS[name]}</svg>`;
   return span;
 }
+
+/** A small menu behind a "more" button. It closes when an item is chosen or on a click elsewhere. */
+function menu(label, items) {
+  const el = h(
+    'details',
+    { class: 'menu' },
+    h('summary', { class: 'icon-btn', title: label, 'aria-label': label }, icon('more')),
+    h('div', { class: 'menu-items', onclick: () => el.removeAttribute('open') }, items),
+  );
+  return el;
+}
+document.addEventListener('click', (e) => {
+  for (const open of document.querySelectorAll('details.menu[open]')) if (!open.contains(e.target)) open.removeAttribute('open');
+});
 
 const iconButton = (name, label, onclick, extra = '') =>
   h('button', { class: `icon-btn ${extra}`, type: 'button', title: label, 'aria-label': label, onclick }, icon(name));
@@ -115,15 +132,27 @@ function tomorrowText({ tomorrow: t, reserve }) {
   return `Tomorrow: ${plural(t.total, 'card')} (${t.new.toLocaleString()} new, ${t.learning.toLocaleString()} learning, ${t.review.toLocaleString()} due)`;
 }
 
+// A count is a coloured dot beside a figure: Anki's blue for new, ochre for learning, green for due.
+const countOf = (kind, n, label) =>
+  h('span', { class: `count ${n ? kind : 'zero'}`, title: `${n} ${label.toLowerCase()}` }, h('i', { class: 'dot', 'aria-hidden': 'true' }), h('b', null, n.toLocaleString()), h('span', null, label));
+
 function countPills(c) {
-  const pill = (kind, n, label) =>
-    h('span', { class: `pill ${n ? kind : 'zero'}`, title: `${n} ${label.toLowerCase()}` }, h('b', null, String(n)), h('span', null, label));
-  return h('div', { class: 'counts' }, pill('new', c.new, 'New'), pill('learning', c.learning, 'Learning'), pill('review', c.review, 'Due'));
+  return h('div', { class: 'counts' }, countOf('new', c.new, 'New'), countOf('learning', c.learning, 'Learning'), countOf('review', c.review, 'Due'));
 }
+
+const statusMark = (status, label = status.label, extra = '') =>
+  h('span', { class: `status ${status.kind} ${extra}` }, h('i', { class: 'dot', 'aria-hidden': 'true' }), label);
 
 // ---- Card content ---------------------------------------------------------
 // A side's text, with its maths typeset by KaTeX (loaded by index.html from vendor/katex/)
 // and its images shown from the server.
+
+/** Marks display maths too wide for its box, which then fades at the edge to show it scrolls. */
+function markOverflow(root) {
+  requestAnimationFrame(() => {
+    for (const el of root.querySelectorAll('.katex-display')) el.classList.toggle('overflows', el.scrollWidth > el.clientWidth + 1);
+  });
+}
 
 const mediaUrl = (name) => `api/media/${encodeURIComponent(name)}`;
 
@@ -569,7 +598,10 @@ function sideEditor(label, textarea) {
     );
   const update = () => {
     preview.hidden = !hasRichContent(textarea.value);
-    if (!preview.hidden) preview.replaceChildren(...rich(textarea.value, (n) => editMath(mathSpans(textarea.value)[n])));
+    if (!preview.hidden) {
+      preview.replaceChildren(...rich(textarea.value, (n) => editMath(mathSpans(textarea.value)[n])));
+      markOverflow(preview);
+    }
   };
   const mathButton = () => {
     const { selectionStart: start, selectionEnd: end } = textarea;
@@ -1097,13 +1129,15 @@ function storageChip() {
 
 function topbar() {
   const dark = document.documentElement.dataset.theme === 'dark';
+  const here = location.hash.split('/')[1] || '';
+  const tab = (path, label) => h('a', { href: `#/${path}`, 'aria-current': (path === here || (path === '' && here === 'deck')) && 'page' }, label);
   return h(
     'header',
     { class: 'topbar' },
-    h('a', { class: 'brand', href: '#/' }, h('span', { class: 'brand-mark' }), 'Recall'),
+    h('a', { class: 'brand', href: '#/' }, 'Recall'),
+    h('nav', { class: 'nav', 'aria-label': 'Main' }, tab('', 'Decks'), tab('upcoming', 'Upcoming'), tab('stats', 'Statistics')),
+    h('span', { class: 'spacer' }),
     storageChip(),
-    h('a', { class: 'icon-btn', href: '#/upcoming', title: 'Upcoming cards', 'aria-label': 'Upcoming cards' }, icon('calendar')),
-    h('a', { class: 'icon-btn', href: '#/stats', title: 'Statistics', 'aria-label': 'Statistics' }, icon('chart')),
     iconButton('upload', 'Import backup', importBackup),
     iconButton('download', 'Export backup', exportBackup),
     iconButton(dark ? 'sun' : 'moon', dark ? 'Light theme' : 'Dark theme', toggleTheme),
@@ -1117,32 +1151,33 @@ function renderHome() {
   const all = decks.map((deck) => ({ deck, c: store.counts(deck.id, now) }));
   const due = all.reduce((sum, { c }) => sum + c.total, 0);
 
-  const tile = ({ deck, c }) =>
+  // The first deck with cards due gets the one filled Study button; the others are quieter.
+  const first = all.find(({ c }) => c.total)?.deck;
+  const row = ({ deck, c }) =>
     h(
-      'article',
+      'li',
       { class: 'deck' },
       h(
         'a',
         { class: 'deck-main', href: `#/deck/${deck.id}` },
-        h('div', { class: 'deck-name' }, deck.name),
+        h('span', { class: 'deck-name' }, deck.name),
         h(
-          'div',
+          'span',
           { class: 'deck-meta' },
           plural(c.cards, 'card') + (c.reserve ? `, ${c.reserve.toLocaleString()} on reserve` : '') + (c.tomorrow.total ? ` · ${c.tomorrow.total.toLocaleString()} tomorrow` : ''),
         ),
-        countPills(c),
       ),
+      countPills(c),
       h(
         'div',
-        { class: 'deck-foot' },
+        { class: 'deck-actions' },
+        iconButton('edit', 'Deck settings', () => openDeckDialog(deck)),
+        iconButton('trash', 'Delete deck', () => removeDeck(deck), 'danger'),
         c.total
-          ? h('a', { class: 'btn primary', href: `#/study/${deck.id}` }, icon('play'), `Study ${c.total}`)
+          ? h('a', { class: `btn ${deck === first ? 'primary' : ''}`, href: `#/study/${deck.id}` }, `Study ${c.total}`)
           : c.cards
             ? h('span', { class: 'caught-up' }, icon('check'), 'All caught up')
             : h('button', { class: 'btn', type: 'button', onclick: () => openCardDialog({ deckId: deck.id }) }, icon('plus'), 'Add cards'),
-        h('span', { class: 'spacer' }),
-        iconButton('edit', 'Deck settings', () => openDeckDialog(deck)),
-        iconButton('trash', 'Delete deck', () => removeDeck(deck), 'danger'),
       ),
     );
 
@@ -1150,16 +1185,9 @@ function renderHome() {
     ? [
         h(
           'div',
-          { class: 'summary' },
-          h('div', { class: 'stat' }, h('b', null, String(due)), 'due today'),
-          h('div', { class: 'stat' }, h('b', null, String(reviewedToday)), 'reviewed today'),
-          h('div', { class: 'stat' }, h('b', null, String(streak)), `day streak`),
-        ),
-        h(
-          'div',
-          { class: 'deck-grid' },
-          all.map(tile),
-          h('button', { class: 'deck add', type: 'button', onclick: () => openDeckDialog() }, icon('plus'), 'New deck'),
+          { class: 'deck-list' },
+          h('div', { class: 'deck-head', 'aria-hidden': 'true' }, h('span', null, 'Deck'), h('span', null, 'New'), h('span', null, 'Learning'), h('span', null, 'Due')),
+          h('ul', { 'aria-label': 'Decks' }, all.map(row)),
         ),
       ]
     : h(
@@ -1184,7 +1212,12 @@ function renderHome() {
       h(
         'div',
         { class: 'page-head' },
-        h('div', null, h('h1', null, 'Decks'), h('p', { class: 'sub' }, decks.length ? plural(decks.length, 'deck') : 'Nothing here yet')),
+        h(
+          'div',
+          null,
+          h('h1', null, 'Decks'),
+          h('p', { class: 'sub' }, decks.length ? `${due.toLocaleString()} due today · ${reviewedToday.toLocaleString()} reviewed today · ${streak}-day streak` : 'Nothing here yet'),
+        ),
         decks.length > 0 &&
           h(
             'div',
@@ -1283,8 +1316,21 @@ function renderDeck(deck) {
       }),
     ),
     h(
+      'button',
+      {
+        class: 'btn filter-toggle',
+        type: 'button',
+        'aria-expanded': String(filtersOpen || filtering),
+        onclick: () => {
+          filtersOpen = !(filtersOpen || filtering);
+          render();
+        },
+      },
+      filtering ? 'Filters on' : 'Filter and sort',
+    ),
+    h(
       'div',
-      { class: 'filters' },
+      { class: `filters ${filtersOpen || filtering ? 'open' : ''}` },
       FILTER_SELECTS.map(([key, label, options]) => {
         const select = h(
           'select',
@@ -1431,7 +1477,7 @@ function renderDeck(deck) {
             ),
             h('div', { class: 'text' }, rich(card.front)),
             h('div', { class: 'text back-text' }, rich(card.back)),
-            h('span', { class: `pill ${status.kind} due`, style: 'justify-self: start' }, status.label),
+            statusMark(status, status.label, 'due'),
             h(
               'div',
               { class: 'row-actions', onclick: (e) => e.stopPropagation() },
@@ -1485,11 +1531,13 @@ function renderDeck(deck) {
         h(
           'div',
           { class: 'actions' },
-          h('a', { class: 'icon-btn', href: `#/upcoming/${deck.id}`, title: 'Upcoming cards', 'aria-label': 'Upcoming cards' }, icon('calendar')),
-          h('a', { class: 'icon-btn', href: `#/stats/${deck.id}`, title: 'Deck statistics', 'aria-label': 'Deck statistics' }, icon('chart')),
-          iconButton('edit', 'Deck settings', () => openDeckDialog(deck)),
-          iconButton('trash', 'Delete deck', () => removeDeck(deck), 'danger'),
-          h('button', { class: 'btn', type: 'button', title: 'Import cards from an Excel or CSV file', onclick: () => pickImportFile(deck) }, icon('upload'), 'Import'),
+          menu('More for this deck', [
+            h('a', { href: `#/upcoming/${deck.id}` }, icon('calendar'), 'Upcoming cards'),
+            h('a', { href: `#/stats/${deck.id}` }, icon('chart'), 'Statistics'),
+            h('button', { type: 'button', title: 'Import cards from an Excel or CSV file', onclick: () => pickImportFile(deck) }, icon('upload'), 'Import from Excel'),
+            h('button', { type: 'button', onclick: () => openDeckDialog(deck) }, icon('edit'), 'Deck settings'),
+            h('button', { type: 'button', class: 'danger', onclick: () => removeDeck(deck) }, icon('trash'), 'Delete deck'),
+          ]),
           h('button', { class: 'btn', type: 'button', onclick: () => openCardDialog({ deckId: deck.id }) }, icon('plus'), 'Add card'),
           c.total > 0 && h('a', { class: 'btn primary', href: `#/study/${deck.id}` }, icon('play'), `Study ${c.total}`),
         ),
@@ -1505,6 +1553,39 @@ const RATINGS = [
   { rating: Rating.Good, label: 'Good', kind: 'good' },
   { rating: Rating.Easy, label: 'Easy', kind: 'easy' },
 ];
+
+// Where each answer would send the card, on a logarithmic time line from a minute to a year.
+const RULER_TICKS = [
+  ['1m', MINUTE],
+  ['1h', 60 * MINUTE],
+  ['1d', DAY],
+  ['1w', 7 * DAY],
+  ['1mo', 30 * DAY],
+  ['1y', 365 * DAY],
+];
+const rulerAt = (ms) => {
+  const span = Math.log(365 * DAY / MINUTE);
+  return Math.min(1, Math.max(0, Math.log(Math.max(ms, MINUTE) / MINUTE) / span)) * 100;
+};
+
+// Marks closer than this (in % of the ruler) are pushed apart, so each stays readable on a phone.
+const RULER_GAP = 4;
+
+function intervalRuler(options, now) {
+  const at = RATINGS.map(({ rating }) => rulerAt(options[rating].due - now));
+  for (let i = 1; i < at.length; i++) at[i] = Math.max(at[i], at[i - 1] + RULER_GAP);
+  for (let i = at.length - 1; i >= 0; i--) at[i] = Math.min(at[i], 100 - RULER_GAP * (at.length - 1 - i));
+  return h(
+    'div',
+    { class: 'ruler', 'aria-hidden': 'true' },
+    h(
+      'div',
+      { class: 'ruler-line' },
+      RATINGS.map(({ rating, kind }, i) => h('i', { class: `mark ${kind}`, style: `left: ${at[i]}%; --i: ${i}`, 'data-n': String(rating) })),
+    ),
+    h('div', { class: 'ruler-ticks' }, RULER_TICKS.map(([label, ms]) => h('span', { style: `left: ${rulerAt(ms)}%` }, label))),
+  );
+}
 
 function currentStudyCard(deckId, now) {
   let card = session.cardId && store.card(session.cardId);
@@ -1542,7 +1623,9 @@ function renderStudy(deck) {
       { class: 'study-top' },
       h('a', { class: 'icon-btn', href: `#/deck/${deck.id}`, title: 'Stop studying', 'aria-label': 'Stop studying' }, icon('close')),
       h('div', { class: 'study-title' }, deck.name),
+      card && statusMark(cardStatus(card, now), card.state === State.Review ? 'Review' : cardStatus(card, now).label, 'state'),
       countPills(c),
+      card && h('div', { class: 'tools' }, iconButton('edit', 'Edit card (E)', () => openCardDialog({ card })), iconButton('trash', 'Delete card', () => removeCard(card), 'danger')),
     ),
     h('div', { class: 'progress' }, h('div', { style: `width: ${progress}%` })),
   ];
@@ -1576,7 +1659,6 @@ function renderStudy(deck) {
     return;
   }
 
-  const status = cardStatus(card, now);
   const options = session.revealed ? store.previewCard(card.id, now) : null;
 
   // Read the side that has just appeared, once.
@@ -1597,13 +1679,6 @@ function renderStudy(deck) {
       h(
         'div',
         { class: 'flashcard' },
-        h('span', { class: `pill ${status.kind} state` }, card.state === State.Review ? 'Review' : status.label),
-        h(
-          'div',
-          { class: 'tools' },
-          iconButton('edit', 'Edit card (E)', () => openCardDialog({ card })),
-          iconButton('trash', 'Delete card', () => removeCard(card), 'danger'),
-        ),
         h('div', { class: 'face question' }, rich(card.front)),
         speakButton(card, deck, 'front'),
         session.revealed && [h('hr'), h('div', { class: 'face answer' }, rich(card.back)), speakButton(card, deck, 'back')],
@@ -1612,23 +1687,27 @@ function renderStudy(deck) {
         'div',
         { class: 'answer-bar' },
         session.revealed
-          ? h(
-              'div',
-              { class: 'ratings' },
-              RATINGS.map(({ rating, label, kind }) =>
-                h(
-                  'button',
-                  { class: `rate ${kind}`, type: 'button', onclick: () => rate(rating) },
-                  h('span', { class: 'ivl' }, (options[rating].state === State.Review ? '' : '<') + formatInterval(options[rating].due - now)),
-                  h('span', { class: 'label' }, label),
-                  h('kbd', null, String(rating)),
+          ? [
+              intervalRuler(options, now),
+              h(
+                'div',
+                { class: 'ratings' },
+                RATINGS.map(({ rating, label, kind }) =>
+                  h(
+                    'button',
+                    { class: `rate ${kind}`, type: 'button', onclick: () => rate(rating) },
+                    h('span', { class: 'label' }, label),
+                    h('span', { class: 'ivl' }, (options[rating].state === State.Review ? '' : '<') + formatInterval(options[rating].due - now)),
+                    h('kbd', null, String(rating)),
+                  ),
                 ),
               ),
-            )
+            ]
           : h('button', { class: 'btn primary lg', type: 'button', onclick: reveal }, 'Show answer', h('kbd', null, 'Space')),
       ),
     ),
   );
+  markOverflow(app);
 }
 
 // ---- Statistics -----------------------------------------------------------
@@ -1805,16 +1884,20 @@ function activityPanel(s, today, deck) {
     sub,
     h(
       'div',
-      { class: 'heatmap', role: 'img', 'aria-label': `Calendar of reviews per day. ${sub}` },
-      h('div', { class: 'heat-days', 'aria-hidden': 'true' }, ['Mon', '', 'Wed', '', 'Fri', '', ''].map((day) => h('span', null, day))),
-      scroller,
-    ),
-    h(
-      'div',
-      { class: 'heat-key', 'aria-hidden': 'true' },
-      'Less',
-      [0, 1, 2, 3, 4].map((level) => h('i', { class: `heat l${level}` })),
-      'More',
+      { class: 'heat-wrap' },
+      h(
+        'div',
+        { class: 'heatmap', role: 'img', 'aria-label': `Calendar of reviews per day. ${sub}` },
+        h('div', { class: 'heat-days', 'aria-hidden': 'true' }, ['Mon', '', 'Wed', '', 'Fri', '', ''].map((day) => h('span', null, day))),
+        scroller,
+      ),
+      h(
+        'div',
+        { class: 'heat-key', 'aria-hidden': 'true' },
+        'Less',
+        [0, 1, 2, 3, 4].map((level) => h('i', { class: `heat l${level}` })),
+        'More',
+      ),
     ),
     deck && s.partial && h('p', { class: 'panel-note' }, `Reviews are counted for each deck separately ${s.loggedFrom ? `since ${sinceDate(s.loggedFrom)}` : 'from now on'}. Choose all decks to see earlier ones.`),
   );
@@ -1919,8 +2002,8 @@ function renderStats(deck) {
       'div',
       { class: 'page' },
       topbar(),
-      h('a', { class: 'back', href: deck ? `#/deck/${deck.id}` : '#/' }, icon('back'), deck ? deck.name : 'All decks'),
-      h('div', { class: 'page-head', style: 'margin-top: 14px' }, h('div', null, h('h1', null, 'Statistics'), h('p', { class: 'sub' }, deck ? deck.name : 'All decks'))),
+      deck && h('a', { class: 'back', href: `#/deck/${deck.id}` }, icon('back'), deck.name),
+      h('div', { class: 'page-head', style: deck ? 'margin-top: 14px' : null }, h('h1', null, 'Statistics')),
       hasCards
         ? [
             h(
@@ -2056,8 +2139,8 @@ function renderUpcoming(deck) {
       'div',
       { class: 'page' },
       topbar(),
-      h('a', { class: 'back', href: deck ? `#/deck/${deck.id}` : '#/' }, icon('back'), deck ? deck.name : 'All decks'),
-      h('div', { class: 'page-head', style: 'margin-top: 14px' }, h('div', null, h('h1', null, 'Upcoming'), h('p', { class: 'sub' }, deck ? deck.name : 'All decks'))),
+      deck && h('a', { class: 'back', href: `#/deck/${deck.id}` }, icon('back'), deck.name),
+      h('div', { class: 'page-head', style: deck ? 'margin-top: 14px' : null }, h('h1', null, 'Upcoming')),
       hasCards
         ? [
             h(
