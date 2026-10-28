@@ -1,0 +1,720 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-28T18:59:51+00:00",
+  "title": "Design System: Recall",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Cool Ground",
+        "canonical": "#f7f8f9",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#414243",
+          "#606162",
+          "#818283",
+          "#a4a5a6",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "surface-sunk": {
+        "role": "neutral",
+        "displayName": "Sunk Surface",
+        "canonical": "#eef0f2",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeee"
+        ]
+      },
+      "hover-wash": {
+        "role": "neutral",
+        "displayName": "Hover Wash",
+        "canonical": "#f0f2f4",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c8c9ca",
+          "#eeeeee"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#e4e6e9",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#414244",
+          "#606164",
+          "#818285",
+          "#a4a5a7",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "#cdd1d6",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404245",
+          "#5e6165",
+          "#7f8387",
+          "#a2a5a9",
+          "#c8c9cb",
+          "#eeeeef"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#15171a",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808286",
+          "#a3a5a8",
+          "#c8c9cb",
+          "#eeeeef"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#5d636c",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#232529",
+          "#3e4248",
+          "#5c626a",
+          "#7d838b",
+          "#a1a5ac",
+          "#c7c9cd",
+          "#eeeeef"
+        ]
+      },
+      "cobalt": {
+        "role": "primary",
+        "displayName": "Deep Cobalt",
+        "canonical": "#2b4fb7",
+        "tonalRamp": [
+          "#050a1b",
+          "#102150",
+          "#223c82",
+          "#375ab7",
+          "#567dde",
+          "#81a3f1",
+          "#b5c9f5",
+          "#eaeff9"
+        ]
+      },
+      "cobalt-deep": {
+        "role": "primary",
+        "displayName": "Cobalt Deep",
+        "canonical": "#213f97",
+        "tonalRamp": [
+          "#050a19",
+          "#13224a",
+          "#263e7a",
+          "#3c5cad",
+          "#5b7ed3",
+          "#85a3e8",
+          "#b8c9ef",
+          "#eaeef7"
+        ]
+      },
+      "cobalt-wash": {
+        "role": "primary",
+        "displayName": "Cobalt Wash",
+        "canonical": "#e7ecfa",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#23252a",
+          "#3f424a",
+          "#5d616c",
+          "#7e828d",
+          "#a1a5ae",
+          "#c7c9ce",
+          "#eeeeef"
+        ]
+      },
+      "link": {
+        "role": "primary",
+        "displayName": "Link Tint",
+        "canonical": "#2b4fb7",
+        "tonalRamp": [
+          "#050a1b",
+          "#102150",
+          "#223c82",
+          "#375ab7",
+          "#567dde",
+          "#81a3f1",
+          "#b5c9f5",
+          "#eaeff9"
+        ]
+      },
+      "on-accent": {
+        "role": "primary",
+        "displayName": "White On-Accent",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "state-new": {
+        "role": "secondary",
+        "displayName": "New Blue",
+        "canonical": "#2f63d1",
+        "tonalRamp": [
+          "#030a1c",
+          "#0a2152",
+          "#1a3c85",
+          "#2c5abc",
+          "#4c7de2",
+          "#7aa4f5",
+          "#b2caf7",
+          "#e9eff9"
+        ]
+      },
+      "state-learning": {
+        "role": "secondary",
+        "displayName": "Learning Ochre",
+        "canonical": "#ad620c",
+        "tonalRamp": [
+          "#140801",
+          "#3c1b00",
+          "#643400",
+          "#904e00",
+          "#b4702f",
+          "#d09768",
+          "#e2c2a9",
+          "#f4ede7"
+        ]
+      },
+      "state-due": {
+        "role": "secondary",
+        "displayName": "Due Green",
+        "canonical": "#1d7b4d",
+        "tonalRamp": [
+          "#030e07",
+          "#042d19",
+          "#124e30",
+          "#227249",
+          "#489469",
+          "#7ab591",
+          "#b3d2be",
+          "#eaf0ec"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "canonical": "#c3313c",
+        "tonalRamp": [
+          "#190404",
+          "#49070e",
+          "#781820",
+          "#ab2a34",
+          "#d35154",
+          "#eb8280",
+          "#f4b8b5",
+          "#f9ebea"
+        ]
+      },
+      "danger-wash": {
+        "role": "tertiary",
+        "displayName": "Red Wash",
+        "canonical": "#fbe8e9",
+        "tonalRamp": [
+          "#0d0a0a",
+          "#2a2323",
+          "#4a3f40",
+          "#6c5d5e",
+          "#8d7e7f",
+          "#aea1a2",
+          "#cec7c7",
+          "#efeeee"
+        ]
+      },
+      "ground-dark": {
+        "role": "neutral",
+        "displayName": "Cool Ground (dark)",
+        "canonical": "#111315",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#404244",
+          "#5f6164",
+          "#808385",
+          "#a3a5a7",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "surface-dark": {
+        "role": "neutral",
+        "displayName": "Surface (dark)",
+        "canonical": "#181a1d",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#404245",
+          "#5f6165",
+          "#808286",
+          "#a3a5a8",
+          "#c8c9cb",
+          "#eeeeef"
+        ]
+      },
+      "hairline-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (dark)",
+        "canonical": "#26292e",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242528",
+          "#404246",
+          "#5e6167",
+          "#7f8288",
+          "#a2a5aa",
+          "#c8c9cc",
+          "#eeeeef"
+        ]
+      },
+      "hairline-strong-dark": {
+        "role": "neutral",
+        "displayName": "Strong Hairline (dark)",
+        "canonical": "#363a41",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#232529",
+          "#3f4247",
+          "#5d6168",
+          "#7e828a",
+          "#a2a5ab",
+          "#c7c9cc",
+          "#eeeeef"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Ink (dark)",
+        "canonical": "#e8e9eb",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252526",
+          "#414243",
+          "#606163",
+          "#818284",
+          "#a4a5a6",
+          "#c9c9ca",
+          "#eeeeee"
+        ]
+      },
+      "muted-ink-dark": {
+        "role": "neutral",
+        "displayName": "Muted Ink (dark)",
+        "canonical": "#9ba1a9",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#232529",
+          "#3f4247",
+          "#5d6268",
+          "#7e838a",
+          "#a1a5ab",
+          "#c7c9cc",
+          "#eeeeef"
+        ]
+      },
+      "cobalt-dark": {
+        "role": "primary",
+        "displayName": "Deep Cobalt (dark)",
+        "canonical": "#3e62d4",
+        "tonalRamp": [
+          "#050a1c",
+          "#102052",
+          "#233b85",
+          "#3758bc",
+          "#567be3",
+          "#80a2f6",
+          "#b5c9f7",
+          "#eaeef9"
+        ]
+      },
+      "cobalt-lift-dark": {
+        "role": "primary",
+        "displayName": "Cobalt Lift (dark)",
+        "canonical": "#4b6fe0",
+        "tonalRamp": [
+          "#050a1c",
+          "#112051",
+          "#243b84",
+          "#3958bb",
+          "#587be1",
+          "#82a2f4",
+          "#b6c9f6",
+          "#eaeef9"
+        ]
+      },
+      "link-dark": {
+        "role": "primary",
+        "displayName": "Link Tint (dark)",
+        "canonical": "#93acff",
+        "tonalRamp": [
+          "#070a17",
+          "#192244",
+          "#303e70",
+          "#4a5ca0",
+          "#697ec5",
+          "#90a2dd",
+          "#bdc8e9",
+          "#eceef6"
+        ]
+      },
+      "state-new-dark": {
+        "role": "secondary",
+        "displayName": "New Blue (dark)",
+        "canonical": "#7ea6ff",
+        "tonalRamp": [
+          "#050b18",
+          "#132348",
+          "#283f76",
+          "#3e5da7",
+          "#5d7fcc",
+          "#87a4e3",
+          "#b8c9ec",
+          "#ebeff7"
+        ]
+      },
+      "state-learning-dark": {
+        "role": "secondary",
+        "displayName": "Learning Ochre (dark)",
+        "canonical": "#e3a258",
+        "tonalRamp": [
+          "#130901",
+          "#381e00",
+          "#5f3800",
+          "#895301",
+          "#ad7532",
+          "#c99b6a",
+          "#dec4aa",
+          "#f3ede7"
+        ]
+      },
+      "state-due-dark": {
+        "role": "secondary",
+        "displayName": "Due Green (dark)",
+        "canonical": "#5dc78f",
+        "tonalRamp": [
+          "#020f07",
+          "#002e18",
+          "#00502e",
+          "#007447",
+          "#379767",
+          "#71b78f",
+          "#afd3bd",
+          "#e9f1ec"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Question side of the card on the study screen."
+      },
+      "card-answer": {
+        "displayName": "Card Answer",
+        "purpose": "Revealed answer, 82% ink."
+      },
+      "card-inline": {
+        "displayName": "Card Inline",
+        "purpose": "Card text in lists, previews and imports."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles; 26px under 640px."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Large numbers in the summary strip; 21px under 640px."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Deck names, wordmark, panel headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Default interface text, tabular numerals."
+      },
+      "meta": {
+        "displayName": "Meta",
+        "purpose": "Meta lines, counts, rating intervals."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Column heads and field labels, sentence case."
+      },
+      "ruler-tick": {
+        "displayName": "Ruler Tick",
+        "purpose": "Interval ruler time labels."
+      }
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 2px 6px rgb(20 24 32 / 0.06), 0 24px 60px rgb(20 24 32 / 0.18)",
+        "purpose": "Dialogs, menus, toasts, chart tooltips (light theme)."
+      },
+      {
+        "name": "float-dark",
+        "value": "0 2px 6px rgb(0 0 0 / 0.3), 0 24px 60px rgb(0 0 0 / 0.55)",
+        "purpose": "Same, dark theme."
+      },
+      {
+        "name": "focus-halo",
+        "value": "0 0 0 3px var(--accent-soft)",
+        "purpose": "Focus ring on inputs and the maths field."
+      },
+      {
+        "name": "lit-mark",
+        "value": "0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent)",
+        "purpose": "Soft ring around the lit interval-ruler mark."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The house ease for every entrance and the ruler travel."
+      },
+      {
+        "name": "rise",
+        "value": "opacity 0 and translateY(8px) to rest, 0.3-0.4s",
+        "purpose": "Card arrival, dialogs, toasts."
+      },
+      {
+        "name": "reveal",
+        "value": "opacity 0 and translateY(4px) to rest, 0.2-0.35s",
+        "purpose": "Answer, ruler, rating row, menus."
+      },
+      {
+        "name": "travel",
+        "value": "left from 0 to position, 0.7s, 40ms stagger per mark",
+        "purpose": "Ruler marks travel out from now on reveal."
+      },
+      {
+        "name": "progress",
+        "value": "width 0.5s ease",
+        "purpose": "Study progress hairline."
+      },
+      {
+        "name": "hover",
+        "value": "0.15s",
+        "purpose": "Colour and background changes."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "all animation and transition off",
+        "purpose": "prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "deck-stack",
+        "value": "760px"
+      },
+      {
+        "name": "phone",
+        "value": "640px"
+      },
+      {
+        "name": "narrow-phone",
+        "value": "420px"
+      },
+      {
+        "name": "touch",
+        "value": "(hover: none)"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "The standard stroked button for every action that is not the one primary action.",
+      "html": "<button class=\"ds-btn\">Import from Anki</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:560 15px/1 var(--font);cursor:pointer;transition:background .15s,border-color .15s}.ds-btn:hover{background:var(--hover);border-color:color-mix(in srgb,var(--border-strong) 60%,var(--text))}.ds-btn:active{transform:translateY(1px)}.ds-btn:focus-visible{outline:2px solid var(--link);outline-offset:2px}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Cobalt fill, white text; one per view, e.g. the Study button of the first deck with cards due.",
+      "html": "<button class=\"ds-btn-primary\">Study 20</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);color:var(--on-accent);font:560 15px/1 var(--font);cursor:pointer;transition:background .15s,border-color .15s}.ds-btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}.ds-btn-primary:active{transform:translateY(1px)}.ds-btn-primary:focus-visible{outline:2px solid var(--link);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "No fill or stroke until hover; for low-weight actions in toolbars and dialogs.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;height:36px;padding:0 14px;border:1px solid transparent;border-radius:var(--radius-sm);background:transparent;color:var(--text);font:560 15px/1 var(--font);cursor:pointer;transition:background .15s}.ds-btn-ghost:hover{background:var(--hover)}.ds-btn-ghost:focus-visible{outline:2px solid var(--link);outline-offset:2px}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Stroked field with a label above; focus turns the stroke cobalt with a soft halo.",
+      "html": "<label class=\"ds-field\"><span>Deck name</span><input value=\"Portuguese A1\"></label>",
+      "css": ".ds-field{display:block;font-family:var(--font)}.ds-field span{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)}.ds-field input{width:100%;padding:8px 11px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:15px/1.5 var(--font)}.ds-field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}"
+    },
+    {
+      "name": "Top Bar Navigation",
+      "kind": "nav",
+      "refersTo": "nav",
+      "description": "Wordmark then text links; the current page is ink with a 2px underline on the bar's hairline.",
+      "html": "<nav class=\"ds-topbar\"><b>Recall</b><a aria-current=\"page\" href=\"#\">Decks</a><a href=\"#\">Upcoming</a><a href=\"#\">Statistics</a></nav>",
+      "css": ".ds-topbar{display:flex;align-items:stretch;gap:24px;height:64px;border-bottom:1px solid var(--border);font:15px/1.5 var(--font)}.ds-topbar b{align-self:center;font-weight:700;font-size:17px;letter-spacing:-.01em;margin-right:4px;color:var(--text)}.ds-topbar a{display:flex;align-items:center;margin-bottom:-1px;border-bottom:2px solid transparent;color:var(--muted);font-weight:550;text-decoration:none;transition:color .15s}.ds-topbar a:hover{color:var(--text)}.ds-topbar a[aria-current=page]{color:var(--text);border-bottom-color:var(--text)}.ds-topbar a:focus-visible{outline:2px solid var(--link);outline-offset:2px}"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Hairline-stroked filter; pressed state takes a surface fill and ink stroke, never a colour.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\" aria-pressed=\"true\">All <b>1,730</b></button><button class=\"ds-chip\" aria-pressed=\"false\">Reserve <b>1,461</b></button></div>",
+      "css": ".ds-chips{display:flex;gap:6px}.ds-chip{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:transparent;color:var(--muted);font:550 13.5px/1 var(--font);cursor:pointer;transition:background .15s,color .15s,border-color .15s}.ds-chip b{font-weight:500;opacity:.8}.ds-chip:hover{color:var(--text);background:var(--hover)}.ds-chip[aria-pressed=true]{color:var(--text);background:var(--surface);border-color:var(--text)}.ds-chip:focus-visible{outline:2px solid var(--link);outline-offset:2px}"
+    },
+    {
+      "name": "Ruled Deck Row",
+      "kind": "card",
+      "refersTo": "button-primary",
+      "description": "A deck as a ruled grid row: name and meta, three dotted numerals, Study button. No box.",
+      "html": "<div class=\"ds-deck\"><div><div class=\"ds-deck-name\">Portuguese A1</div><div class=\"ds-deck-meta\">1,730 cards, 1,461 on reserve</div></div><span class=\"ds-n\"><i style=\"color:var(--new)\"></i><b>6</b></span><span class=\"ds-n zero\"><i></i><b>0</b></span><span class=\"ds-n\"><i style=\"color:var(--review)\"></i><b>14</b></span><button>Study 20</button></div>",
+      "css": ".ds-deck{display:grid;grid-template-columns:minmax(0,1fr) 56px 56px 56px auto;align-items:center;column-gap:12px;min-height:72px;border-top:1px solid var(--border-strong);border-bottom:1px solid var(--border);font:15px/1.5 var(--font);font-variant-numeric:tabular-nums;color:var(--text);transition:background .15s}.ds-deck:hover{background:linear-gradient(to right,transparent,var(--hover) 12px,var(--hover) calc(100% - 12px),transparent)}.ds-deck-name{font-size:17px;font-weight:600;letter-spacing:-.01em}.ds-deck-meta{color:var(--muted);font-size:13.5px}.ds-n{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;font-size:16px}.ds-n i{width:6px;height:6px;border-radius:50%;background:currentColor}.ds-n b{font-weight:650}.ds-n.zero i{color:var(--border-strong)}.ds-n.zero b{color:var(--muted);font-weight:500}.ds-deck button{height:36px;padding:0 14px;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);color:var(--on-accent);font:560 15px/1 var(--font);cursor:pointer}.ds-deck button:hover{background:var(--accent-hover)}.ds-deck button:focus-visible{outline:2px solid var(--link);outline-offset:2px}"
+    },
+    {
+      "name": "Interval Ruler with Rating Buttons",
+      "kind": "custom",
+      "refersTo": "rate-button",
+      "description": "Signature: a log-time axis from 1m to 1y; hovering or focusing a rating lights its mark in cobalt.",
+      "html": "<div class=\"ds-answer\"><div class=\"ds-ruler\"><i class=\"m again\" style=\"left:17%\"></i><i class=\"m hard\" style=\"left:87%\"></i><i class=\"m good\" style=\"left:93%\"></i><i class=\"m easy\" style=\"left:97%\"></i></div><div class=\"ds-ticks\"><span style=\"left:0;transform:none\">1m</span><span style=\"left:30%\">1h</span><span style=\"left:55%\">1d</span><span style=\"left:70%\">1w</span><span style=\"left:81%\">1mo</span><span style=\"left:100%;transform:translateX(-100%)\">1y</span></div><div class=\"ds-rates\"><button class=\"r again\"><b>Again</b><small>&lt;10m</small></button><button class=\"r hard\"><b>Hard</b><small>2.1mo</small></button><button class=\"r good\"><b>Good</b><small>4.9mo</small></button><button class=\"r easy\"><b>Easy</b><small>6.4mo</small></button></div></div>",
+      "css": ".ds-answer{font:15px/1.5 var(--font);color:var(--text)}.ds-ruler{position:relative;height:9px;margin:0 4px;background:linear-gradient(var(--border-strong),var(--border-strong)) center/100% 1px no-repeat}.ds-ruler .m{position:absolute;top:0;width:9px;height:9px;margin-left:-4.5px;border-radius:50%;background:var(--bg);border:1.5px solid var(--muted);transition:background .25s,border-color .25s;animation:ds-travel .7s cubic-bezier(.16,1,.3,1) both}@keyframes ds-travel{from{left:0}}.ds-ticks{position:relative;height:18px;margin:6px 4px 14px;font-size:11.5px;color:var(--muted)}.ds-ticks span{position:absolute;transform:translateX(-50%)}.ds-rates{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.ds-rates .r{display:flex;flex-direction:column;align-items:flex-start;padding:12px 14px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:inherit;cursor:pointer;transition:background .15s,border-color .15s}.ds-rates .r b{font-weight:600}.ds-rates .r small{font-size:13.5px;color:var(--muted)}.ds-rates .r:hover{border-color:var(--text);background:var(--hover)}.ds-rates .r:focus-visible{outline:2px solid var(--link);outline-offset:2px}.ds-answer:has(.r.again:is(:hover,:focus-visible)) .m.again,.ds-answer:has(.r.hard:is(:hover,:focus-visible)) .m.hard,.ds-answer:has(.r.good:is(:hover,:focus-visible)) .m.good,.ds-answer:has(.r.easy:is(:hover,:focus-visible)) .m.easy{background:var(--accent);border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent)}"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "Inverted ink notice at the bottom centre; one of the few things that casts the float shadow.",
+      "html": "<div class=\"ds-toast\">10 cards pulled in as new cards</div>",
+      "css": ".ds-toast{display:inline-block;padding:10px 16px;border-radius:var(--radius-sm);background:var(--text);color:var(--bg);font:550 15px/1.5 var(--font);box-shadow:var(--shadow-lg)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Quiet Type on One Ground",
+    "overview": "The card is the only object that matters. Everything else in Recall is quiet type set on a single cool neutral ground: ink for what you read, a muted grey for what you can skip, and one deep cobalt for the thing you can press next. Structure comes from hairline rules, not boxes; lists are ruled rows, the day's figures are a ruled strip, and the card itself is unboxed words set large in a serif, centred, with nothing around them.\n\nDensity is calm, not sparse. A deck row carries its name, a meta line, three dotted numerals and a Study button in 72px; a study screen is one thin header line, a 2px progress hairline, the card, the interval ruler and four rating buttons. Both themes are first-class and share every rule; the dark theme is a near-black cool ground, not an inversion.\n\nThe one signature device is the interval ruler on the study screen: a hairline log-time axis from one minute to one year, with each answer's next review marked where it falls. It is the only place the interface draws a picture, and it exists to show the scheduler honestly. The old index-card skeuomorphism, themed worlds and coloured pill badges were rejected for this system.",
+    "keyCharacteristics": [
+      "One cool neutral ground per theme; no cream, no tinted panels.",
+      "A single cobalt accent for action and focus, with white text on it in both themes.",
+      "State is a 6px dot beside a tabular numeral, never a coloured badge.",
+      "Hairline rules divide; shadows appear only on things that float.",
+      "Interface in Hanken Grotesk; card text in Source Serif 4, which sits beside KaTeX.",
+      "The interval ruler is the signature: a log-time axis with lit marks."
+    ],
+    "rules": [
+      {
+        "name": "The One Cobalt Rule",
+        "body": "Cobalt means \"press this\" or \"you are here\". On the home screen exactly one Study button is filled: the first deck with cards due. Every other Study button is the plain outlined button.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dot Rule",
+        "body": "State colour appears only as a 6px round dot beside a tabular numeral or a status word. A zero count greys its dot (strong hairline) and its numeral (muted ink). Never tint a background, a pill or a whole row by state.",
+        "section": "colors"
+      },
+      {
+        "name": "The Separate Link Rule",
+        "body": "Links and focus rings use the link token, never cobalt directly, so the dark theme can keep a solid cobalt fill under white text while links and focus stay pale and legible.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Voices Rule",
+        "body": "Serif is for card content only; the interface never sets its own chrome in Source Serif 4, and card text never appears in Hanken Grotesk.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every figure is tabular (`font-variant-numeric: tabular-nums` on body) so counts line up in their columns.",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline-Not-Box Rule",
+        "body": "Group content with 1px rules above and below, never by enclosing it in a bordered, shadowed card. The study card has no box at all.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Only-What-Floats Rule",
+        "body": "Shadow appears only on surfaces that overlay the page (dialog, menu, toast, tooltip). Nothing at rest in the page flow casts one.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** separate content with 1px hairlines (`--border`, `--border-strong` under column heads) and leave it on the ground.",
+      "**Do** show state as a 6px dot beside a tabular numeral, in Anki's blue, ochre and green.",
+      "**Do** fill exactly one action per view with cobalt and give it white text, in both themes.",
+      "**Do** use the link token for text links and the 2px `:focus-visible` outline.",
+      "**Do** set card content in Source Serif 4 and all interface chrome in Hanken Grotesk.",
+      "**Do** keep secondary row actions hidden until hover or focus-within on wide screens, and visible on phones.",
+      "**Do** keep every interval visible as text on its rating button; the ruler only illustrates it.",
+      "**Do** keep Anki's words: Again, Hard, Good, Easy; New, Learning, Due."
+    ],
+    "donts": [
+      "**Don't** put content in bordered or shadowed boxes; shadow is only for dialogs, menus, toasts and tooltips.",
+      "**Don't** use coloured pill badges or tinted backgrounds to show state.",
+      "**Don't** introduce a second accent hue or a cream or warm ground.",
+      "**Don't** use cobalt for links or focus rings directly; use the link token.",
+      "**Don't** return to index-card skeuomorphism or any themed world.",
+      "**Don't** add uppercase tracked labels or kickers above headings; labels are sentence case.",
+      "**Don't** show ruler numbers on hover-capable screens; there the lit mark does the work."
+    ]
+  }
+}

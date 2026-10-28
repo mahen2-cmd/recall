@@ -1,0 +1,20 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-color",
+        "value": "#000",
+        "createdAt": "2026-10-28T19:00:31.124Z",
+        "reason": "Claude: #000 is the alpha source of the maths overflow mask-image, not a rendered colour"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "katex_main",
+        "createdAt": "2026-10-28T19:00:31.128Z",
+        "reason": "Claude: KaTeX's own maths face on the equation-editor buttons, so they match the typeset maths"
+      }
+    ]
+  }
+}

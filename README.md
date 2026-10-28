@@ -2,9 +2,9 @@
 
 A small, fast flashcard app with Anki's scheduling and a cleaner interface. It runs on your own computer, keeps your cards in a plain file you own, and reads cards aloud: English on one side, European Portuguese on the other.
 
-![The deck list, showing three Portuguese decks with their new, learning and due counts](docs/decks.png)
+![The deck list: three Portuguese decks in a ruled list with their new, learning and due counts, under a line of today's figures](docs/decks.png)
 
-![Studying a card in dark mode, with the answer shown and the four rating buttons](docs/study.png)
+![Studying a card in dark mode, with the answer shown, the time ruler marking when each rating would bring the card back, and the four rating buttons](docs/study.png)
 
 ## Features
 
