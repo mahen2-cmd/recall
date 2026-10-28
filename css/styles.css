@@ -696,7 +696,8 @@ kbd {
   height: 32px;
   padding: 0 10px;
 }
-.filter-toggle {
+.filter-toggle,
+.reserve-narrow {
   display: none;
 }
 
@@ -1095,7 +1096,7 @@ kbd {
 .answer-bar:has(.rate.easy:is(:hover, :focus-visible)) .mark.easy {
   background: var(--accent);
   border-color: var(--accent);
-  transform: scale(1.6);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 /* Without hover, each mark carries its rating's number instead. */
 @media (hover: none) {
@@ -2002,8 +2003,32 @@ table.upcoming {
   .filters:not(.open) {
     display: none;
   }
-  .reserve-text span {
+  .reserve-text span,
+  .reserve-wide {
     display: none;
+  }
+  .reserve-narrow {
+    display: block;
+  }
+  .reserve {
+    flex-wrap: nowrap;
+  }
+  .reserve-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .reserve > .icon {
+    display: none;
+  }
+  .chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-inline: -16px;
+    padding-inline: 16px;
+    scrollbar-width: none;
+  }
+  .chip {
+    flex: none;
   }
   .study-top .state {
     display: none;

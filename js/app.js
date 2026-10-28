@@ -1239,6 +1239,17 @@ function reserveBar(deck, n) {
     render();
   };
   const amount = h('input', { type: 'number', required: true, min: 1, max: n, step: 1, value: Math.min(n, 10), 'aria-label': 'How many cards to pull in' });
+  const reorder = () => {
+    query = '';
+    filters = { ...NO_FILTERS, groups: ['reserve'], sort: 'reserve' };
+    render();
+  };
+  // Shown as buttons on a wide screen, and folded into a menu on a phone.
+  const more = [
+    n > 1 && ['Pull all', `Pull all ${n.toLocaleString()}`, null, () => pull(n), null],
+    n > 1 && ['Reorder', 'Reorder', 'up', reorder, 'List the reserve in the order it is pulled in, to rearrange it'],
+    ['Import to reserve', 'Import to reserve', 'upload', () => pickImportFile(deck, true), 'Import cards from a CSV or Excel file straight into the reserve'],
+  ].filter(Boolean);
   return h(
     'form',
     {
@@ -1255,24 +1266,9 @@ function reserveBar(deck, n) {
       h('b', null, n ? `${plural(n, 'card')} on reserve` : 'Nothing on reserve'),
       h('span', null, n ? 'Kept out of study until you pull them in, the first in line first.' : 'Cards on reserve are kept out of study until you pull them in.'),
     ),
-    n > 0 && [amount, h('button', { class: 'btn primary', type: 'submit' }, 'Pull in'), n > 1 && h('button', { class: 'btn', type: 'button', onclick: () => pull(n) }, `Pull all ${n.toLocaleString()}`)],
-    n > 1 &&
-      h(
-        'button',
-        {
-          class: 'btn',
-          type: 'button',
-          title: 'List the reserve in the order it is pulled in, to rearrange it',
-          onclick: () => {
-            query = '';
-            filters = { ...NO_FILTERS, groups: ['reserve'], sort: 'reserve' };
-            render();
-          },
-        },
-        icon('up'),
-        'Reorder',
-      ),
-    h('button', { class: 'btn', type: 'button', title: 'Import cards from a CSV or Excel file straight into the reserve', onclick: () => pickImportFile(deck, true) }, icon('upload'), 'Import to reserve'),
+    n > 0 && [amount, h('button', { class: 'btn primary', type: 'submit' }, 'Pull in')],
+    more.map(([, label, glyph, onclick, title]) => h('button', { class: 'btn reserve-wide', type: 'button', title, onclick }, glyph && icon(glyph), label)),
+    h('div', { class: 'reserve-narrow' }, menu('More for the reserve', more.map(([, label, glyph, onclick]) => h('button', { type: 'button', onclick }, icon(glyph ?? 'down'), label)))),
   );
 }
 
