@@ -4,6 +4,8 @@
 //   [image:<name>]   an image kept by the server in data/media/
 // Used by the app to draw cards, and by the server and scripts to work out what to read aloud.
 
+import { mathSpeech } from './mathspeech.js';
+
 const TOKEN = /\\\(([\s\S]+?)\\\)|\\\[([\s\S]+?)\\\]|\[image:([^\]\s]+)\]/g;
 
 /** A side's text split into parts: `{ text }`, `{ math, display }` and `{ image }`. */
@@ -35,12 +37,13 @@ export const mathToken = (math, display) => (display ? `\\[ ${math} \\]` : `\\( 
 /** Whether a side holds anything other than plain text. */
 export const hasRichContent = (text) => parseContent(text).some((part) => part.text === undefined);
 
-/** The words of a side to read aloud: the text without its maths and images. */
+/** The words of a side to read aloud: its text and maths, without images. */
 export function speechText(text) {
   return parseContent(text)
-    .map((part) => part.text ?? ' ')
+    .map((part) => (part.math !== undefined ? ` ${mathSpeech(part.math)} ` : part.text ?? ' '))
     .join('')
     .replace(/\s+/g, ' ')
+    .replace(/ ([?.,;:!])/g, '$1')
     .trim();
 }
 

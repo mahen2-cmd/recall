@@ -524,7 +524,7 @@ function openDeckDialog(deck) {
         h('label', { class: 'field' }, h('span', null, 'Front language'), frontLang),
         h('label', { class: 'field' }, h('span', null, 'Back language'), backLang),
       ),
-      h('small', { class: 'field-note' }, 'Auto-play reads a side aloud when it appears, in that side’s language. You can always play either side with its speaker button. Maths and images are skipped.'),
+      h('small', { class: 'field-note' }, 'Auto-play reads a side aloud when it appears, in that side’s language. You can always play either side with its speaker button. Maths is read out in words, in English; images are skipped.'),
       serverVoice() && [
         h('label', { class: 'check', style: 'margin-top: 12px' }, saveAudio, 'Keep the audio made for this deck'),
         h('small', { class: 'field-note' }, 'Turn this off for decks that are mostly maths: audio is then made each time it plays instead of being kept, and “npm run cache-voice” leaves the deck out.'),

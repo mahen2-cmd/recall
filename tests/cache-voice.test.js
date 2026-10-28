@@ -25,11 +25,14 @@ test('every side of every card is asked for once, in its language, reserve last'
   ]);
 });
 
-test('maths and images are not read, and decks that keep no audio are left out', () => {
+test('maths is read as words, images are not, and decks that keep no audio are left out', () => {
   const decks = [{ id: 'maths', frontLang: 'en-GB', backLang: 'en-GB' }, { id: 'proofs', saveAudio: false }];
   const cards = [
     { id: 'a', deckId: 'maths', front: 'What is \\( J(q) \\)?', back: '[image:x.png]\n\\[ \\dot x = J \\dot q \\]', created: 0 },
     { id: 'b', deckId: 'proofs', front: 'Why?', back: 'Because', created: 0 },
   ];
-  assert.deepEqual(speechRequests({ decks, cards }), [{ text: 'What is ?', lang: 'en-GB' }]);
+  assert.deepEqual(speechRequests({ decks, cards }), [
+    { text: 'What is J of q?', lang: 'en-GB' },
+    { text: 'x dot equals J q dot', lang: 'en-GB' },
+  ]);
 });
