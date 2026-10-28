@@ -3,3 +3,8 @@ data/
 # Books and generated decks: copyrighted material, kept out of git
 *.pdf
 decks/
+# The Impeccable design skill, installed locally, and its working files
+.claude/
+.impeccable/mocks/
+.impeccable/review/
+.impeccable/scratch/
