@@ -150,6 +150,17 @@ test('stats track reviews today and the streak', () => {
   assert.deepEqual(store.stats(T0 + 3 * DAY), { reviewedToday: 0, streak: 0 });
 });
 
+test('recent days list the reviews on each day, ending today', () => {
+  const deck = setup();
+  const a = store.addCard(deck.id, 'a', 'a', T0);
+  const b = store.addCard(deck.id, 'b', 'b', T0);
+  store.answerCard(a.id, Rating.Good, T0);
+  store.answerCard(b.id, Rating.Good, T0 + 2 * DAY);
+  const days = store.recentDays(4, T0 + 2 * DAY);
+  assert.deepEqual(days.map((day) => day.n), [0, 1, 0, 1]);
+  assert.equal(store.dayKey(days[3].date), store.dayKey(T0 + 2 * DAY));
+});
+
 test('statistics count cards, the forecast and answers by kind', () => {
   const deck = setup();
   const other = store.createDeck({ name: 'Other' });

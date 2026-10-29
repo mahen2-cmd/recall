@@ -50,6 +50,7 @@ Recall uses Anki's own scheduler (SM-2 by default, FSRS-6 per deck), ported from
 - Keep Anki's vocabulary so Anki users feel at home: Again, Hard, Good, Easy; new, learning, due, young, mature; deck, card, review.
 - Voice in the README and UI: plain, short, concrete English sentences that say what happens ("Pulled cards become ordinary new cards").
 - Look and feel (chosen 2026-10-28): calm and minimal, distinct through craft rather than a theme, at the level of iA Writer, Things and Linear. Themed worlds (post office, timetable, airport signage, darkroom, dictionary page) and the old index-card skeuomorphism were rejected; so were coloured pill badges, busy screens and wasted space.
+- Look and feel, refined (chosen 2026-10-29): "Night minimal". The same calm, minimal family, with more presence and built dark-first for evening study: a serif headline on the home page saying what is left today, one "Start review" button, the day's figures and a seven-day streak strip, decks as quiet blocks, larger card type, a segmented progress bar, rating buttons that lean toward Good, and on a phone a bottom tab bar and two-by-two rating buttons. Chosen from mockups over a Swiss-grid identity (rejected outright), a sidebar workspace, and a single "Today" queue across decks, which was set aside because it would change how studying works.
 
 ## Evidence on Hand
 

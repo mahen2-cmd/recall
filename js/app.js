@@ -18,6 +18,8 @@ let filtersDeck = null;
 let filtersOpen = false;
 // Ids of the cards ticked in that list. Only cards on screen stay selected.
 let selected = new Set();
+// How many cards the list draws at first, and how many more each "Show more" adds.
+const CARD_PAGE = 200;
 
 const CARD_GROUPS = [
   ['new', 'New'],
@@ -68,6 +70,7 @@ const ICONS = {
   chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
   calendar: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
   box: '<path d="M4 8h16v11H4zM3 5h18v3H3zM10 12h4"/>',
+  decks: '<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M7 5h10M9 2.5h6"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   swap: '<path d="M7 4L3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/>',
@@ -1130,12 +1133,14 @@ function storageChip() {
 function topbar() {
   const dark = document.documentElement.dataset.theme === 'dark';
   const here = location.hash.split('/')[1] || '';
-  const tab = (path, label) => h('a', { href: `#/${path}`, 'aria-current': (path === here || (path === '' && here === 'deck')) && 'page' }, label);
+  // On a phone the same links become a tab bar along the bottom, each with its icon.
+  const tab = (path, label, glyph) =>
+    h('a', { href: `#/${path}`, 'aria-current': (path === here || (path === '' && here === 'deck')) && 'page' }, icon(glyph), h('span', null, label));
   return h(
     'header',
     { class: 'topbar' },
     h('a', { class: 'brand', href: '#/' }, 'Recall'),
-    h('nav', { class: 'nav', 'aria-label': 'Main' }, tab('', 'Decks'), tab('upcoming', 'Upcoming'), tab('stats', 'Statistics')),
+    h('nav', { class: 'nav', 'aria-label': 'Main' }, tab('', 'Decks', 'decks'), tab('upcoming', 'Upcoming', 'calendar'), tab('stats', 'Statistics', 'chart')),
     h('span', { class: 'spacer' }),
     storageChip(),
     iconButton('upload', 'Import backup', importBackup),
@@ -1144,15 +1149,77 @@ function topbar() {
   );
 }
 
+const NUMBER_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+const weekdayLong = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
+
+/** "Thursday evening": the day, and the part of it, that the home page greets. */
+function partOfDay(now) {
+  const d = new Date(now);
+  const hour = d.getHours();
+  const part = hour < 4 ? 'night' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+  // Days roll over at 4am, so the small hours still belong to the day before.
+  return `${weekdayLong.format(hour < 4 ? addDays(d, -1) : d)} ${part}`;
+}
+
+/** The day's headline: how much is left to study, in a sentence. */
+function todayHeadline(due, reviewedToday) {
+  if (!due) return reviewedToday ? 'All caught up for today.' : 'Nothing is due today.';
+  const count = due <= 10 ? NUMBER_WORDS[due] : due.toLocaleString();
+  return `${count} ${due === 1 ? 'card' : 'cards'}, then you’re done.`;
+}
+
+/** Today at a glance: the headline and the way into the first deck with cards due, beside the day's figures. */
+function todayPanel(all, now) {
+  const { reviewedToday, streak } = store.stats(now);
+  const due = all.reduce((total, { c }) => total + c.total, 0);
+  const tomorrow = all.reduce((total, { c }) => total + c.tomorrow.total, 0);
+  const waiting = all.filter(({ c }) => c.total);
+  const first = waiting[0]?.deck;
+  const days = store.recentDays(7, now);
+
+  return h(
+    'section',
+    { class: 'today', 'aria-label': 'Today' },
+    h(
+      'div',
+      { class: 'today-main' },
+      h('p', { class: 'today-when' }, partOfDay(now)),
+      h('h1', null, todayHeadline(due, reviewedToday)),
+      first &&
+        h(
+          'div',
+          { class: 'today-go' },
+          h('a', { class: 'btn primary lg', href: `#/study/${first.id}` }, icon('play'), 'Start review'),
+          h('span', null, waiting.length > 1 ? `${first.name} first, then ${plural(waiting.length - 1, 'more deck')}` : `From ${first.name}`),
+        ),
+    ),
+    h(
+      'dl',
+      { class: 'today-figures' },
+      h('div', null, h('dd', null, reviewedToday.toLocaleString()), h('dt', null, 'reviewed today')),
+      h(
+        'div',
+        { class: 'streak' },
+        h(
+          'div',
+          { class: 'streak-days', 'aria-hidden': 'true' },
+          days.map(({ date, n }, i) =>
+            withTip(h('i', { class: `${n ? 'on' : ''} ${i === days.length - 1 ? 'now' : ''}` }), n ? plural(n, 'review') : 'No reviews', longDate.format(date)),
+          ),
+        ),
+        h('dd', null, `${streak}-day`),
+        h('dt', null, 'streak'),
+      ),
+      h('div', null, h('dd', null, tomorrow.toLocaleString()), h('dt', null, 'due tomorrow')),
+    ),
+  );
+}
+
 function renderHome() {
   const now = Date.now();
   const decks = store.decks();
-  const { reviewedToday, streak } = store.stats(now);
   const all = decks.map((deck) => ({ deck, c: store.counts(deck.id, now) }));
-  const due = all.reduce((sum, { c }) => sum + c.total, 0);
 
-  // The first deck with cards due gets the one filled Study button; the others are quieter.
-  const first = all.find(({ c }) => c.total)?.deck;
   const row = ({ deck, c }) =>
     h(
       'li',
@@ -1161,11 +1228,7 @@ function renderHome() {
         'a',
         { class: 'deck-main', href: `#/deck/${deck.id}` },
         h('span', { class: 'deck-name' }, deck.name),
-        h(
-          'span',
-          { class: 'deck-meta' },
-          plural(c.cards, 'card') + (c.reserve ? `, ${c.reserve.toLocaleString()} on reserve` : '') + (c.tomorrow.total ? ` · ${c.tomorrow.total.toLocaleString()} tomorrow` : ''),
-        ),
+        h('span', { class: 'deck-meta' }, plural(c.cards, 'card') + (c.reserve ? ` · ${c.reserve.toLocaleString()} on reserve` : '') + (c.tomorrow.total ? ` · ${c.tomorrow.total.toLocaleString()} tomorrow` : '')),
       ),
       countPills(c),
       h(
@@ -1174,21 +1237,28 @@ function renderHome() {
         iconButton('edit', 'Deck settings', () => openDeckDialog(deck)),
         iconButton('trash', 'Delete deck', () => removeDeck(deck), 'danger'),
         c.total
-          ? h('a', { class: `btn ${deck === first ? 'primary' : ''}`, href: `#/study/${deck.id}` }, `Study ${c.total}`)
+          ? h('a', { class: 'btn', href: `#/study/${deck.id}` }, `Study ${c.total}`)
           : c.cards
-            ? h('span', { class: 'caught-up' }, icon('check'), 'All caught up')
+            ? h('span', { class: 'caught-up' }, icon('check'), 'Caught up')
             : h('button', { class: 'btn', type: 'button', onclick: () => openCardDialog({ deckId: deck.id }) }, icon('plus'), 'Add cards'),
       ),
     );
 
   const body = decks.length
     ? [
+        todayPanel(all, now),
         h(
           'div',
-          { class: 'deck-list' },
-          h('div', { class: 'deck-head', 'aria-hidden': 'true' }, h('span', null, 'Deck'), h('span', null, 'New'), h('span', null, 'Learning'), h('span', null, 'Due')),
-          h('ul', { 'aria-label': 'Decks' }, all.map(row)),
+          { class: 'section-head' },
+          h('h2', null, 'Decks'),
+          h(
+            'div',
+            { class: 'actions' },
+            h('button', { class: 'btn', type: 'button', title: 'Import decks from an Anki .apkg file', onclick: pickAnkiFile }, icon('upload'), 'Import from Anki'),
+            h('button', { class: 'btn', type: 'button', onclick: () => openDeckDialog() }, icon('plus'), 'New deck'),
+          ),
         ),
+        h('ul', { class: 'deck-list', 'aria-label': 'Decks' }, all.map(row)),
       ]
     : h(
         'div',
@@ -1209,23 +1279,7 @@ function renderHome() {
       'div',
       { class: 'page' },
       topbar(),
-      h(
-        'div',
-        { class: 'page-head' },
-        h(
-          'div',
-          null,
-          h('h1', null, 'Decks'),
-          h('p', { class: 'sub' }, decks.length ? `${due.toLocaleString()} due today · ${reviewedToday.toLocaleString()} reviewed today · ${streak}-day streak` : 'Nothing here yet'),
-        ),
-        decks.length > 0 &&
-          h(
-            'div',
-            { class: 'actions' },
-            h('button', { class: 'btn', type: 'button', title: 'Import decks from an Anki .apkg file', onclick: pickAnkiFile }, icon('upload'), 'Import from Anki'),
-            h('button', { class: 'btn primary', type: 'button', onclick: () => openDeckDialog() }, icon('plus'), 'New deck'),
-          ),
-      ),
+      !decks.length && h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Decks'), h('p', { class: 'sub' }, 'Nothing here yet'))),
       body,
     ),
   );
@@ -1343,6 +1397,8 @@ function renderDeck(deck) {
   const shown = h('span', { class: 'count' });
   // Ids of the reserve cards being dragged to a new place.
   let dragged = null;
+  // How many matching cards are drawn; a deck can hold thousands, and drawing them all is slow.
+  let limit = CARD_PAGE;
 
   const drawList = () => {
     const q = query.trim();
@@ -1424,7 +1480,7 @@ function renderDeck(deck) {
             h('button', { class: 'btn ghost', type: 'button', onclick: () => pick([...selected], false) }, 'Cancel'),
           ],
         ),
-        matches.map((card) => {
+        matches.slice(0, limit).map((card) => {
           const status = cardStatus(card, now);
           const sortable = line.length > 1 && card.reserved;
           // Dropping on the lower half of a row puts the cards after it.
@@ -1483,6 +1539,25 @@ function renderDeck(deck) {
           );
           return row;
         }),
+        matches.length > limit &&
+          h(
+            'div',
+            { class: 'list-more' },
+            h(
+              'button',
+              {
+                class: 'btn',
+                type: 'button',
+                onclick: () => {
+                  limit += CARD_PAGE;
+                  drawList();
+                  list.querySelector('.list-more .btn')?.focus({ preventScroll: true });
+                },
+              },
+              `Show ${Math.min(CARD_PAGE, matches.length - limit).toLocaleString()} more`,
+            ),
+            h('span', null, `${limit.toLocaleString()} of ${matches.length.toLocaleString()} shown`),
+          ),
       ),
     );
   };
@@ -1494,6 +1569,7 @@ function renderDeck(deck) {
     'aria-label': 'Search cards',
     oninput: () => {
       query = search.value;
+      limit = CARD_PAGE;
       drawList();
     },
   });
@@ -1583,6 +1659,12 @@ function intervalRuler(options, now) {
   );
 }
 
+// Sessions up to this many cards show a segment per card in the progress bar.
+const MAX_SEGMENTS = 24;
+
+/** A side that is a word or a short phrase, plain text on one line, which the card sets larger. */
+const isShort = (text) => text.length <= 28 && !/\n|\\[([]|\[image:/.test(text);
+
 function currentStudyCard(deckId, now) {
   let card = session.cardId && store.card(session.cardId);
   if (!card || card.deckId !== deckId || card.reserved) {
@@ -1611,7 +1693,13 @@ function renderStudy(deck) {
   if (session.deckId !== deck.id) Object.assign(session, { deckId: deck.id, cardId: null, revealed: false, done: 0, spoken: null });
   const card = currentStudyCard(deck.id, now);
   const c = store.counts(deck.id, now);
-  const progress = session.done + c.total ? (session.done / (session.done + c.total)) * 100 : 100;
+  const total = session.done + c.total;
+  const progress = total ? (session.done / total) * 100 : 100;
+  // A short session shows one segment per card; a long one, a single bar.
+  const bar =
+    total > 1 && total <= MAX_SEGMENTS
+      ? h('div', { class: 'progress segments', role: 'img', 'aria-label': `${session.done} of ${total} cards done` }, Array.from({ length: total }, (_, i) => h('i', { class: i < session.done ? 'done' : '' })))
+      : h('div', { class: 'progress', role: 'img', 'aria-label': `${session.done} of ${total} cards done` }, h('div', { style: `width: ${progress}%` }));
 
   const top = [
     h(
@@ -1623,7 +1711,7 @@ function renderStudy(deck) {
       countPills(c),
       card && h('div', { class: 'tools' }, iconButton('edit', 'Edit card (E)', () => openCardDialog({ card })), iconButton('trash', 'Delete card', () => removeCard(card), 'danger')),
     ),
-    h('div', { class: 'progress' }, h('div', { style: `width: ${progress}%` })),
+    bar,
   ];
 
   if (!card) {
@@ -1675,9 +1763,9 @@ function renderStudy(deck) {
       h(
         'div',
         { class: 'flashcard' },
-        h('div', { class: 'face question' }, rich(card.front)),
+        h('div', { class: `face question ${isShort(card.front) ? 'short' : ''}` }, rich(card.front)),
         speakButton(card, deck, 'front'),
-        session.revealed && [h('hr'), h('div', { class: 'face answer' }, rich(card.back)), speakButton(card, deck, 'back')],
+        session.revealed && [h('hr'), h('div', { class: `face answer ${isShort(card.back) ? 'short' : ''}` }, rich(card.back)), speakButton(card, deck, 'back')],
       ),
       h(
         'div',
@@ -1688,13 +1776,14 @@ function renderStudy(deck) {
               h(
                 'div',
                 { class: 'ratings' },
+                // Space and Enter also answer Good, so Good is the one the screen leans toward.
                 RATINGS.map(({ rating, label, kind }) =>
                   h(
                     'button',
-                    { class: `rate ${kind}`, type: 'button', onclick: () => rate(rating) },
+                    { class: `rate ${kind}`, type: 'button', title: rating === Rating.Good ? 'Good (3, Space or Enter)' : `${label} (${rating})`, onclick: () => rate(rating) },
                     h('span', { class: 'label' }, label),
                     h('span', { class: 'ivl' }, (options[rating].state === State.Review ? '' : '<') + formatInterval(options[rating].due - now)),
-                    h('kbd', null, String(rating)),
+                    h('kbd', null, rating === Rating.Good ? 'Space' : String(rating)),
                   ),
                 ),
               ),

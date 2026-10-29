@@ -566,6 +566,15 @@ function streakOf(perDay, now) {
 
 export const stats = (now = Date.now()) => streakOf(state.daily, now);
 
+/** Reviews on each of the last `n` days, oldest first and ending today, as `{ date, n }`. */
+export function recentDays(n, now = Date.now()) {
+  const day = new Date(dayStart(now));
+  day.setDate(day.getDate() - (n - 1));
+  const days = [];
+  for (let i = 0; i < n; i++, day.setDate(day.getDate() + 1)) days.push({ date: new Date(day), n: state.daily[dayKey(day)] ?? 0 });
+  return days;
+}
+
 /**
  * Figures for the statistics page, for one deck or, without `deckId`, for all of them.
  *   cards      how many cards are new, learning, young and mature, leaving out the reserve
